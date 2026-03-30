@@ -69,11 +69,3 @@ class SimulationService:
 
     def unsubscribe_control_events(self, q: queue.Queue[dict[str, Any]]) -> None:
         self._runtime.unsubscribe(q)
-
-    @property
-    def runtime(self) -> RuntimeState:
-        return self._runtime
-
-    @property
-    def generator(self) -> DepartureGenerator:
-        return self._generator

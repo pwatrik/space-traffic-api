@@ -1,23 +1,25 @@
 from __future__ import annotations
 
-import json
-import os
 import sqlite3
 import threading
-from datetime import UTC, datetime
 from typing import Any
+
+from .storage import CatalogRepository, ControlRepository, DepartureRepository, StorageContext
 
 
 class SQLiteStore:
     def __init__(self, db_path: str):
-        self._db_path = db_path
-        self._conn = sqlite3.connect(db_path, check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
-        self._lock = threading.Lock()
+        conn = sqlite3.connect(db_path, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        context = StorageContext(db_path=db_path, conn=conn, lock=threading.Lock())
+        self._context = context
+        self.catalog = CatalogRepository(context)
+        self.departures = DepartureRepository(context)
+        self.control = ControlRepository(context)
 
     def init_schema(self) -> None:
-        with self._lock:
-            self._conn.executescript(
+        with self._context.lock:
+            self._context.conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS stations (
                     id TEXT PRIMARY KEY,
@@ -74,60 +76,16 @@ class SQLiteStore:
                 CREATE INDEX IF NOT EXISTS idx_control_events_event_time ON control_events(event_time);
                 """
             )
-            self._conn.commit()
+            self._context.conn.commit()
 
     def seed_stations(self, stations: list[dict[str, Any]]) -> None:
-        with self._lock:
-            self._conn.executemany(
-                """
-                INSERT INTO stations (id, name, body_name, body_type, parent_body)
-                VALUES (:id, :name, :body_name, :body_type, :parent_body)
-                ON CONFLICT(id) DO UPDATE SET
-                    name=excluded.name,
-                    body_name=excluded.body_name,
-                    body_type=excluded.body_type,
-                    parent_body=excluded.parent_body
-                """,
-                stations,
-            )
-            self._conn.commit()
+        self.catalog.seed_stations(stations)
 
     def seed_ships(self, ships: list[dict[str, Any]]) -> None:
-        with self._lock:
-            self._conn.executemany(
-                """
-                INSERT INTO ships (
-                    id, name, faction, ship_type, displacement_million_m3, home_station_id,
-                    captain_name, cargo
-                )
-                VALUES (
-                    :id, :name, :faction, :ship_type, :displacement_million_m3, :home_station_id,
-                    :captain_name, :cargo
-                )
-                ON CONFLICT(id) DO UPDATE SET
-                    name=excluded.name,
-                    faction=excluded.faction,
-                    ship_type=excluded.ship_type,
-                    displacement_million_m3=excluded.displacement_million_m3,
-                    home_station_id=excluded.home_station_id,
-                    captain_name=excluded.captain_name,
-                    cargo=excluded.cargo
-                """,
-                ships,
-            )
-            self._conn.commit()
+        self.catalog.seed_ships(ships)
 
     def list_stations(self, body_type: str | None = None) -> list[dict[str, Any]]:
-        query = "SELECT * FROM stations"
-        params: list[Any] = []
-        if body_type:
-            query += " WHERE body_type = ?"
-            params.append(body_type)
-        query += " ORDER BY body_type, body_name"
-
-        with self._lock:
-            rows = self._conn.execute(query, params).fetchall()
-        return [dict(row) for row in rows]
+        return self.catalog.list_stations(body_type=body_type)
 
     def list_ships(
         self,
@@ -136,56 +94,15 @@ class SQLiteStore:
         cargo: str | None = None,
         ship_type: str | None = None,
     ) -> list[dict[str, Any]]:
-        where_clauses: list[str] = []
-        params: list[Any] = []
-        if faction:
-            where_clauses.append("faction = ?")
-            params.append(faction)
-        if home_station_id:
-            where_clauses.append("home_station_id = ?")
-            params.append(home_station_id)
-        if cargo:
-            where_clauses.append("cargo = ?")
-            params.append(cargo)
-        if ship_type:
-            where_clauses.append("ship_type = ?")
-            params.append(ship_type)
-
-        query = "SELECT * FROM ships"
-        if where_clauses:
-            query += " WHERE " + " AND ".join(where_clauses)
-        query += " ORDER BY id"
-
-        with self._lock:
-            rows = self._conn.execute(query, params).fetchall()
-        return [dict(row) for row in rows]
+        return self.catalog.list_ships(
+            faction=faction,
+            home_station_id=home_station_id,
+            cargo=cargo,
+            ship_type=ship_type,
+        )
 
     def insert_departure(self, event: dict[str, Any]) -> int:
-        now = datetime.now(UTC).isoformat()
-        with self._lock:
-            cur = self._conn.execute(
-                """
-                INSERT INTO departures (
-                    event_uid, departure_time, ship_id, source_station_id, destination_station_id,
-                    est_arrival_time, scenario, fault_flags, malformed, payload_json, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    event["event_uid"],
-                    event["departure_time"],
-                    event.get("ship_id"),
-                    event.get("source_station_id"),
-                    event.get("destination_station_id"),
-                    event.get("est_arrival_time"),
-                    event.get("scenario"),
-                    json.dumps(event.get("fault_flags", [])),
-                    1 if event.get("malformed") else 0,
-                    event["payload_json"],
-                    now,
-                ),
-            )
-            self._conn.commit()
-            return int(cur.lastrowid)
+        return self.departures.insert(event)
 
     def list_departures(
         self,
@@ -194,65 +111,21 @@ class SQLiteStore:
         limit: int,
         order: str,
     ) -> list[dict[str, Any]]:
-        where: list[str] = []
-        params: list[Any] = []
-
-        if since_id is not None:
-            where.append("id > ?")
-            params.append(since_id)
-        if since_time is not None:
-            where.append("departure_time >= ?")
-            params.append(since_time)
-
-        query = "SELECT * FROM departures"
-        if where:
-            query += " WHERE " + " AND ".join(where)
-
-        direction = "DESC" if order.lower() == "desc" else "ASC"
-        query += f" ORDER BY id {direction} LIMIT ?"
-        params.append(limit)
-
-        with self._lock:
-            rows = self._conn.execute(query, params).fetchall()
-        records = [dict(row) for row in rows]
-        if direction == "DESC":
-            records.reverse()
-        return records
+        return self.departures.list(
+            since_id=since_id,
+            since_time=since_time,
+            limit=limit,
+            order=order,
+        )
 
     def trim_departures(self, max_rows: int) -> None:
-        with self._lock:
-            self._conn.execute(
-                """
-                DELETE FROM departures
-                WHERE id IN (
-                    SELECT id FROM departures
-                    ORDER BY id ASC
-                    LIMIT (
-                        SELECT CASE
-                            WHEN COUNT(*) > ? THEN COUNT(*) - ?
-                            ELSE 0
-                        END
-                        FROM departures
-                    )
-                )
-                """,
-                (max_rows, max_rows),
-            )
-            self._conn.commit()
+        self.departures.trim(max_rows)
 
     def reset_departures(self) -> None:
-        with self._lock:
-            self._conn.execute("DELETE FROM departures")
-            self._conn.commit()
+        self.departures.reset()
 
     def get_db_size_bytes(self) -> int:
-        if os.path.exists(self._db_path):
-            return int(os.path.getsize(self._db_path))
-
-        with self._lock:
-            page_count = self._conn.execute("PRAGMA page_count").fetchone()[0]
-            page_size = self._conn.execute("PRAGMA page_size").fetchone()[0]
-        return int(page_count) * int(page_size)
+        return self.departures.get_db_size_bytes()
 
     def enforce_db_size_limit(
         self,
@@ -260,89 +133,14 @@ class SQLiteStore:
         target_utilization: float = 0.90,
         batch_size: int = 5000,
     ) -> dict[str, int]:
-        if max_db_size_bytes < 1:
-            return {
-                "before_bytes": self.get_db_size_bytes(),
-                "after_bytes": self.get_db_size_bytes(),
-                "culled_departures": 0,
-                "culled_control_events": 0,
-            }
-
-        before = self.get_db_size_bytes()
-        if before <= max_db_size_bytes:
-            return {
-                "before_bytes": before,
-                "after_bytes": before,
-                "culled_departures": 0,
-                "culled_control_events": 0,
-            }
-
-        target_size = int(max_db_size_bytes * max(0.50, min(0.99, target_utilization)))
-        culled_departures = 0
-        culled_control_events = 0
-
-        with self._lock:
-            while self.get_db_size_bytes() > target_size:
-                departures_deleted = self._conn.execute(
-                    """
-                    DELETE FROM departures
-                    WHERE id IN (
-                        SELECT id FROM departures
-                        ORDER BY id ASC
-                        LIMIT ?
-                    )
-                    """,
-                    (batch_size,),
-                ).rowcount
-
-                if departures_deleted > 0:
-                    culled_departures += int(departures_deleted)
-                    self._conn.commit()
-                    continue
-
-                controls_deleted = self._conn.execute(
-                    """
-                    DELETE FROM control_events
-                    WHERE id IN (
-                        SELECT id FROM control_events
-                        ORDER BY id ASC
-                        LIMIT ?
-                    )
-                    """,
-                    (batch_size,),
-                ).rowcount
-                if controls_deleted > 0:
-                    culled_control_events += int(controls_deleted)
-                    self._conn.commit()
-                    continue
-
-                break
-
-            # Reclaim free pages after deletes when we were above the threshold.
-            self._conn.commit()
-            self._conn.execute("VACUUM")
-            self._conn.commit()
-
-        after = self.get_db_size_bytes()
-        return {
-            "before_bytes": before,
-            "after_bytes": after,
-            "culled_departures": culled_departures,
-            "culled_control_events": culled_control_events,
-        }
+        return self.departures.enforce_db_size_limit(
+            max_db_size_bytes=max_db_size_bytes,
+            target_utilization=target_utilization,
+            batch_size=batch_size,
+        )
 
     def insert_control_event(self, event_type: str, action: str, payload: dict[str, Any]) -> int:
-        event_time = datetime.now(UTC).isoformat()
-        with self._lock:
-            cur = self._conn.execute(
-                """
-                INSERT INTO control_events (event_time, event_type, action, payload_json)
-                VALUES (?, ?, ?, ?)
-                """,
-                (event_time, event_type, action, json.dumps(payload)),
-            )
-            self._conn.commit()
-            return int(cur.lastrowid)
+        return self.control.insert_event(event_type=event_type, action=action, payload=payload)
 
     def list_control_events(
         self,
@@ -350,65 +148,22 @@ class SQLiteStore:
         limit: int,
         order: str,
     ) -> list[dict[str, Any]]:
-        where: list[str] = []
-        params: list[Any] = []
-        if since_id is not None:
-            where.append("id > ?")
-            params.append(since_id)
-
-        query = "SELECT * FROM control_events"
-        if where:
-            query += " WHERE " + " AND ".join(where)
-
-        direction = "DESC" if order.lower() == "desc" else "ASC"
-        query += f" ORDER BY id {direction} LIMIT ?"
-        params.append(limit)
-
-        with self._lock:
-            rows = self._conn.execute(query, params).fetchall()
-        records = [dict(row) for row in rows]
-        if direction == "DESC":
-            records.reverse()
-        return records
+        return self.control.list_events(since_id=since_id, limit=limit, order=order)
 
     def get_counts(self) -> dict[str, int]:
-        with self._lock:
-            stations = self._conn.execute("SELECT COUNT(*) FROM stations").fetchone()[0]
-            ships = self._conn.execute("SELECT COUNT(*) FROM ships").fetchone()[0]
-            departures = self._conn.execute("SELECT COUNT(*) FROM departures").fetchone()[0]
-            control_events = self._conn.execute("SELECT COUNT(*) FROM control_events").fetchone()[0]
         return {
-            "stations": int(stations),
-            "ships": int(ships),
-            "departures": int(departures),
-            "control_events": int(control_events),
+            "stations": self.catalog.count_stations(),
+            "ships": self.catalog.count_ships(),
+            "departures": self.departures.count(),
+            "control_events": self.control.count_events(),
         }
 
     def set_control_state(self, state_key: str, payload: dict[str, Any]) -> None:
-        now = datetime.now(UTC).isoformat()
-        with self._lock:
-            self._conn.execute(
-                """
-                INSERT INTO control_state (state_key, state_json, updated_at)
-                VALUES (?, ?, ?)
-                ON CONFLICT(state_key) DO UPDATE SET
-                    state_json=excluded.state_json,
-                    updated_at=excluded.updated_at
-                """,
-                (state_key, json.dumps(payload), now),
-            )
-            self._conn.commit()
+        self.control.set_state(state_key=state_key, payload=payload)
 
     def get_control_state(self, state_key: str) -> dict[str, Any] | None:
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT state_json FROM control_state WHERE state_key = ?",
-                (state_key,),
-            ).fetchone()
-        if not row:
-            return None
-        return json.loads(row[0])
+        return self.control.get_state(state_key)
 
     def close(self) -> None:
-        with self._lock:
-            self._conn.close()
+        with self._context.lock:
+            self._context.conn.close()
