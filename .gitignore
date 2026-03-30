@@ -1,0 +1,24 @@
+# Python cache and bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+
+# Test and tooling caches
+.pytest_cache/
+
+# Local runtime and smoke-check artifacts
+*.db
+server.out
+server.err
+server.pid
+smoke_report.json
+smoke_report.error.txt
+
+# OS/editor noise
+.DS_Store
+Thumbs.db

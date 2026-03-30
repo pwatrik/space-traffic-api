@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "space-traffic-api"
+version = "0.1.0"
+description = "Fake space traffic event API for ingestion demos"
+requires-python = ">=3.11"
+dependencies = [
+  "Flask==3.1.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
