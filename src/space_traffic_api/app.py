@@ -4,11 +4,10 @@ import atexit
 
 from flask import Flask
 
+from .api import create_api_blueprint
 from .config import AppConfig
-from .generator import DepartureGenerator
-from .routes import create_api_blueprint
-from .runtime import RuntimeState
 from .seed_data import build_ships, build_stations
+from .simulation import SimulationService
 from .store import SQLiteStore
 
 
@@ -23,29 +22,29 @@ def create_app() -> Flask:
     store.seed_stations(stations)
     store.seed_ships(ships)
 
-    runtime = RuntimeState(config=config, store=store)
-    generator = DepartureGenerator(store=store, runtime=runtime, stations=stations, ships=ships)
+    simulation = SimulationService(config=config, store=store, stations=stations, ships=ships)
     if not config.disable_generator:
-        generator.start()
+        simulation.start()
 
     app = Flask(__name__)
     app.register_blueprint(
         create_api_blueprint(
             api_key=config.api_key,
             store=store,
-            runtime=runtime,
-            generator=generator,
+            simulation=simulation,
         )
     )
 
-    app.config["space_runtime"] = runtime
+    app.config["space_runtime"] = simulation.runtime
     app.config["space_store"] = store
-    app.config["space_generator"] = generator
+    app.config["space_generator"] = simulation.generator
+    app.config["space_simulation"] = simulation
 
     def _cleanup() -> None:
-        if generator.is_alive():
-            generator.stop()
-            generator.join(timeout=2.0)
+        # Use a timeout longer than the generator's maximum sleep interval
+        # to reduce the risk of closing the store while the generator thread
+        # is still running and using the database connection.
+        simulation.stop(timeout=65.0)
         store.close()
 
     atexit.register(_cleanup)
