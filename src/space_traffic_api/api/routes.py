@@ -4,53 +4,13 @@ import json
 import queue
 import time
 from datetime import UTC, datetime
-from typing import Any
 
 from flask import Blueprint, Response, jsonify, request
 
 from ..auth import require_api_key
 from ..simulation import SimulationService, list_faults, list_scenarios
 from ..store import SQLiteStore
-
-
-def _serialize_departure(row: dict[str, Any]) -> dict[str, Any]:
-    payload = row.get("payload_json")
-    try:
-        parsed_payload = json.loads(payload) if payload else None
-    except json.JSONDecodeError:
-        parsed_payload = payload
-
-    return {
-        "id": row["id"],
-        "event_uid": row["event_uid"],
-        "departure_time": row["departure_time"],
-        "ship_id": row.get("ship_id"),
-        "source_station_id": row.get("source_station_id"),
-        "destination_station_id": row.get("destination_station_id"),
-        "est_arrival_time": row.get("est_arrival_time"),
-        "scenario": row.get("scenario"),
-        "fault_flags": json.loads(row.get("fault_flags") or "[]"),
-        "malformed": bool(row.get("malformed")),
-        "payload": parsed_payload,
-    }
-
-
-def _serialize_control_event(row: dict[str, Any]) -> dict[str, Any]:
-    payload = row.get("payload")
-    if payload is None:
-        raw = row.get("payload_json")
-        try:
-            payload = json.loads(raw) if raw else None
-        except json.JSONDecodeError:
-            payload = raw
-
-    return {
-        "id": row["id"],
-        "event_time": row["event_time"],
-        "event_type": row["event_type"],
-        "action": row["action"],
-        "payload": payload,
-    }
+from .serializers import serialize_control_event, serialize_departure
 
 
 def create_api_blueprint(
@@ -112,7 +72,7 @@ def create_api_blueprint(
             order=order,
         )
 
-        serialized = [_serialize_departure(row) for row in rows]
+        serialized = [serialize_departure(row) for row in rows]
         next_since_id = serialized[-1]["id"] if serialized else since_id
 
         return jsonify(
@@ -134,7 +94,7 @@ def create_api_blueprint(
                 while True:
                     try:
                         row = subscriber.get(timeout=1.0)
-                        payload = _serialize_departure(row)
+                        payload = serialize_departure(row)
                         yield f"event: departure\ndata: {json.dumps(payload)}\n\n"
                     except queue.Empty:
                         if time.time() - last_heartbeat >= 10:
@@ -152,7 +112,7 @@ def create_api_blueprint(
         limit = min(1000, max(1, request.args.get("limit", default=100, type=int)))
         order = request.args.get("order", default="asc")
         rows = simulation.list_control_events(since_id=since_id, limit=limit, order=order)
-        serialized = [_serialize_control_event(row) for row in rows]
+        serialized = [serialize_control_event(row) for row in rows]
         next_since_id = serialized[-1]["id"] if serialized else since_id
         return jsonify({"control_events": serialized, "count": len(serialized), "next_since_id": next_since_id})
 
@@ -167,7 +127,7 @@ def create_api_blueprint(
                 while True:
                     try:
                         row = subscriber.get(timeout=1.0)
-                        payload = _serialize_control_event(row)
+                        payload = serialize_control_event(row)
                         yield f"event: control_event\ndata: {json.dumps(payload)}\n\n"
                     except queue.Empty:
                         if time.time() - last_heartbeat >= 10:
