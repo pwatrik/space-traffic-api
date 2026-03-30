@@ -27,6 +27,7 @@ class AppConfig:
     deterministic_seed: int
     deterministic_start_time: str
     retention_max_rows: int
+    db_max_size_mb: int
     disable_generator: bool
 
     @staticmethod
@@ -40,5 +41,6 @@ class AppConfig:
             deterministic_seed=_as_int(os.getenv("SPACE_TRAFFIC_DETERMINISTIC_SEED"), 424242),
             deterministic_start_time=os.getenv("SPACE_TRAFFIC_DETERMINISTIC_START_TIME", "2150-01-01T00:00:00Z"),
             retention_max_rows=_as_int(os.getenv("SPACE_TRAFFIC_RETENTION_MAX_ROWS"), 200000),
+            db_max_size_mb=_as_int(os.getenv("SPACE_TRAFFIC_DB_MAX_SIZE_MB"), 512),
             disable_generator=_as_bool(os.getenv("SPACE_TRAFFIC_DISABLE_GENERATOR"), False),
         )

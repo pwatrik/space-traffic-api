@@ -18,6 +18,8 @@ server.err
 server.pid
 smoke_report.json
 smoke_report.error.txt
+container_sanity_report.json
+container_sanity_report.error.txt
 
 # OS/editor noise
 .DS_Store

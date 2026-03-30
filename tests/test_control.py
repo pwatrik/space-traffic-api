@@ -35,6 +35,14 @@ def test_activate_scenario_fault_and_reset():
             assert body["status"] == "reset"
             assert body["runtime"]["deterministic_seed"] == 555
 
+            patched = client.patch("/config", headers=headers, json={"db_max_size_mb": 20})
+            assert patched.status_code == 200
+            assert patched.get_json()["db_max_size_mb"] == 50
+
+            patched_ok = client.patch("/config", headers=headers, json={"db_max_size_mb": 256})
+            assert patched_ok.status_code == 200
+            assert patched_ok.get_json()["db_max_size_mb"] == 256
+
             control_events = client.get("/control-events", headers=headers)
             assert control_events.status_code == 200
             events_payload = control_events.get_json()

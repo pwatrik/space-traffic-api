@@ -38,6 +38,7 @@ class DepartureGenerator(threading.Thread):
         self._sim_time: datetime | None = None
         self._event_counter = 0
         self._last_event_uid = ""
+        self._next_db_size_check_at = 0.0
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -80,6 +81,13 @@ class DepartureGenerator(threading.Thread):
             row_id = self._store.insert_departure(event)
             event["id"] = row_id
             self._store.trim_departures(state["retention_max_rows"])
+
+            now_monotonic = time.monotonic()
+            if now_monotonic >= self._next_db_size_check_at:
+                db_max_size_mb = int(state.get("db_max_size_mb", 512))
+                self._store.enforce_db_size_limit(max_db_size_bytes=db_max_size_mb * 1024 * 1024)
+                self._next_db_size_check_at = now_monotonic + 5.0
+
             self._publish_event(event)
 
             if state.get("deterministic_mode"):

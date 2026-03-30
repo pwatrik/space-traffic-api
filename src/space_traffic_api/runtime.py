@@ -24,6 +24,7 @@ class RuntimeState:
             "deterministic_seed": config.deterministic_seed,
             "deterministic_start_time": config.deterministic_start_time,
             "retention_max_rows": config.retention_max_rows,
+            "db_max_size_mb": config.db_max_size_mb,
             "active_scenario": None,
             "active_faults": {},
             "last_reset_at": None,
@@ -57,6 +58,7 @@ class RuntimeState:
             "deterministic_seed",
             "deterministic_start_time",
             "retention_max_rows",
+            "db_max_size_mb",
         }
 
         with self._lock:
@@ -71,6 +73,8 @@ class RuntimeState:
                 self._state["base_max_events_per_minute"] = self._state["base_min_events_per_minute"]
             if self._state["retention_max_rows"] < 100:
                 self._state["retention_max_rows"] = 100
+            if self._state["db_max_size_mb"] < 50:
+                self._state["db_max_size_mb"] = 50
 
             self._persist_unlocked()
             self._emit_control_event_unlocked("config", "patched", {"config": dict(self._state)})

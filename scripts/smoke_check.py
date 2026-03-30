@@ -61,7 +61,6 @@ def main() -> None:
             health = client.get("/healthz")
             stations = client.get("/stations", headers=_headers())
             stations_payload = stations.get_json()
-            station_ids = {row["id"] for row in stations_payload["stations"]}
 
             client.patch(
                 "/config",
@@ -116,8 +115,6 @@ def main() -> None:
             summary = {
                 "health": health.get_json(),
                 "station_count": stations_payload["count"],
-                "pluto_found": "STN-PLANET-PLUTO" in station_ids,
-                "charon_found": "STN-MOON-CHARON" in station_ids,
                 "deterministic_match": _normalize_departures(first_run["departures"]) == _normalize_departures(second_run["departures"]),
                 "first_run": first_run["departures"],
                 "second_run": second_run["departures"],

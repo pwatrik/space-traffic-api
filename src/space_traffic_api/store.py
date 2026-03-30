@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import threading
 from datetime import UTC, datetime
@@ -9,6 +10,7 @@ from typing import Any
 
 class SQLiteStore:
     def __init__(self, db_path: str):
+        self._db_path = db_path
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._lock = threading.Lock()
@@ -242,6 +244,92 @@ class SQLiteStore:
         with self._lock:
             self._conn.execute("DELETE FROM departures")
             self._conn.commit()
+
+    def get_db_size_bytes(self) -> int:
+        if os.path.exists(self._db_path):
+            return int(os.path.getsize(self._db_path))
+
+        with self._lock:
+            page_count = self._conn.execute("PRAGMA page_count").fetchone()[0]
+            page_size = self._conn.execute("PRAGMA page_size").fetchone()[0]
+        return int(page_count) * int(page_size)
+
+    def enforce_db_size_limit(
+        self,
+        max_db_size_bytes: int,
+        target_utilization: float = 0.90,
+        batch_size: int = 5000,
+    ) -> dict[str, int]:
+        if max_db_size_bytes < 1:
+            return {
+                "before_bytes": self.get_db_size_bytes(),
+                "after_bytes": self.get_db_size_bytes(),
+                "culled_departures": 0,
+                "culled_control_events": 0,
+            }
+
+        before = self.get_db_size_bytes()
+        if before <= max_db_size_bytes:
+            return {
+                "before_bytes": before,
+                "after_bytes": before,
+                "culled_departures": 0,
+                "culled_control_events": 0,
+            }
+
+        target_size = int(max_db_size_bytes * max(0.50, min(0.99, target_utilization)))
+        culled_departures = 0
+        culled_control_events = 0
+
+        with self._lock:
+            while self.get_db_size_bytes() > target_size:
+                departures_deleted = self._conn.execute(
+                    """
+                    DELETE FROM departures
+                    WHERE id IN (
+                        SELECT id FROM departures
+                        ORDER BY id ASC
+                        LIMIT ?
+                    )
+                    """,
+                    (batch_size,),
+                ).rowcount
+
+                if departures_deleted > 0:
+                    culled_departures += int(departures_deleted)
+                    self._conn.commit()
+                    continue
+
+                controls_deleted = self._conn.execute(
+                    """
+                    DELETE FROM control_events
+                    WHERE id IN (
+                        SELECT id FROM control_events
+                        ORDER BY id ASC
+                        LIMIT ?
+                    )
+                    """,
+                    (batch_size,),
+                ).rowcount
+                if controls_deleted > 0:
+                    culled_control_events += int(controls_deleted)
+                    self._conn.commit()
+                    continue
+
+                break
+
+            # Reclaim free pages after deletes when we were above the threshold.
+            self._conn.commit()
+            self._conn.execute("VACUUM")
+            self._conn.commit()
+
+        after = self.get_db_size_bytes()
+        return {
+            "before_bytes": before,
+            "after_bytes": after,
+            "culled_departures": culled_departures,
+            "culled_control_events": culled_control_events,
+        }
 
     def insert_control_event(self, event_type: str, action: str, payload: dict[str, Any]) -> int:
         event_time = datetime.now(UTC).isoformat()

@@ -6,12 +6,12 @@ Fake event API for data engineering ingestion demos. It simulates ship departure
 
 - Static domain data:
   - Stations: one per major planet, major moon, and major asteroid.
-  - Pluto is treated as a planet, with Charon as its moon.
   - Ships: 220 registry entries across merchant, government, and military factions.
 - Departure generation:
   - Baseline throughput: 10-20 events/minute.
   - Background generator starts at app initialization.
   - Every event is persisted to SQLite.
+  - Oldest events are culled automatically when the SQLite file exceeds a configured max size.
 - Security:
   - Static API key auth via `X-API-Key` or `Authorization: Bearer`.
 - Event consumption:
@@ -88,6 +88,19 @@ Invoke-RestMethod -Method Post -Uri "http://localhost:8000/control/reset" -Heade
 
 - `scripts/smoke_check.py` runs a quick validation flow for deterministic replay, scenario/fault controls, and control-events visibility.
 - It writes a summary to `smoke_report.json` and writes a traceback to `smoke_report.error.txt` on failure.
+- `scripts/container_sanity_check.py` validates a running container on the default mapped address `http://127.0.0.1:8000`.
+- It writes a summary to `container_sanity_report.json` and writes a traceback to `container_sanity_report.error.txt` on failure.
+
+Container sanity usage:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\container_sanity_check.py
+```
+
+Optional overrides:
+
+- `SPACE_TRAFFIC_BASE_URL` (default `http://127.0.0.1:8000`)
+- `SPACE_TRAFFIC_API_KEY` (default `space-demo-key`)
 
 ## Notes
 
@@ -95,5 +108,8 @@ Invoke-RestMethod -Method Post -Uri "http://localhost:8000/control/reset" -Heade
   - deterministic mode is enabled,
   - the same seed and config are used,
   - and `/control/reset` is called before each run.
+- Storage cap settings:
+  - `SPACE_TRAFFIC_DB_MAX_SIZE_MB` defines the SQLite file size cap.
+  - When exceeded, the service culls oldest departures first, then oldest control events if necessary.
 - Fault injections are flagged per event in `fault_flags`.
 - Control-plane changes are persisted and streamable as `control_events` so consumers can correlate data anomalies with scenario, fault, and reset actions.
