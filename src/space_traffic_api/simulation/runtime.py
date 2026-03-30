@@ -179,16 +179,22 @@ class RuntimeState:
     def _expire_unlocked(self) -> None:
         now = datetime.now(UTC)
         scenario = self._state.get("active_scenario")
+        scenario_dirty = False
         if scenario and scenario.get("ends_at"):
             try:
                 if datetime.fromisoformat(scenario["ends_at"]) <= now:
                     prior = dict(scenario)
                     self._state["active_scenario"] = None
+                    scenario_dirty = True
                     self._emit_control_event_unlocked("scenario", "expired", {"previous": prior})
             except ValueError:
                 prior = dict(scenario)
                 self._state["active_scenario"] = None
+                scenario_dirty = True
                 self._emit_control_event_unlocked("scenario", "expired", {"previous": prior})
+
+        if scenario_dirty:
+            self._persist_unlocked()
 
         active_faults = dict(self._state.get("active_faults", {}))
         dirty = False
