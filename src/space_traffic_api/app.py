@@ -41,7 +41,10 @@ def create_app() -> Flask:
     app.config["space_simulation"] = simulation
 
     def _cleanup() -> None:
-        simulation.stop(timeout=2.0)
+        # Use a timeout longer than the generator's maximum sleep interval
+        # to reduce the risk of closing the store while the generator thread
+        # is still running and using the database connection.
+        simulation.stop(timeout=65.0)
         store.close()
 
     atexit.register(_cleanup)
