@@ -69,6 +69,7 @@ def create_api_blueprint(
     def healthz() -> Response:
         counts = store.get_counts()
         snapshot = runtime.snapshot()
+        db_max_size_mb = int(snapshot.get("db_max_size_mb", 512))
         return jsonify(
             {
                 "status": "ok",
@@ -77,6 +78,8 @@ def create_api_blueprint(
                 "active_scenario": snapshot.get("active_scenario"),
                 "active_faults": snapshot.get("active_faults", {}),
                 "deterministic_mode": snapshot.get("deterministic_mode"),
+                "db_size_bytes": store.get_db_size_bytes(),
+                "db_max_size_bytes": db_max_size_mb * 1024 * 1024,
             }
         )
 
