@@ -225,8 +225,32 @@ class FleetRepository:
             return int(cur.rowcount) > 0
 
     def complete_arrivals(self, as_of_time: str) -> int:
+        return len(self.complete_arrivals_with_details(as_of_time))
+
+    def complete_arrivals_with_details(self, as_of_time: str) -> list[dict[str, Any]]:
         now = datetime.now(UTC).isoformat()
         with self._context.lock:
+            arriving_rows = self._context.conn.execute(
+                """
+                SELECT
+                    ss.ship_id,
+                    ss.source_station_id,
+                    ss.destination_station_id,
+                    s.faction,
+                    s.ship_type,
+                    s.size_class
+                FROM ship_state ss
+                JOIN ships s ON s.id = ss.ship_id
+                WHERE
+                    ss.status = 'active'
+                    AND ss.in_transit = 1
+                    AND ss.est_arrival_time IS NOT NULL
+                    AND ss.est_arrival_time <= ?
+                ORDER BY ss.ship_id
+                """,
+                (as_of_time,),
+            ).fetchall()
+
             cur = self._context.conn.execute(
                 """
                 UPDATE ship_state
@@ -247,7 +271,9 @@ class FleetRepository:
                 (now, as_of_time),
             )
             self._context.conn.commit()
-            return int(cur.rowcount)
+            if int(cur.rowcount) <= 0:
+                return []
+            return [dict(row) for row in arriving_rows]
 
     def reset_to_home_station(self) -> None:
         now = datetime.now(UTC).isoformat()

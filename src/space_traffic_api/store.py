@@ -180,6 +180,9 @@ class SQLiteStore:
     def complete_ship_arrivals(self, as_of_time: str) -> int:
         return self.fleet.complete_arrivals(as_of_time)
 
+    def complete_ship_arrivals_with_details(self, as_of_time: str) -> list[dict[str, Any]]:
+        return self.fleet.complete_arrivals_with_details(as_of_time)
+
     def reset_ship_states(self) -> None:
         self.fleet.reset_to_home_station()
 

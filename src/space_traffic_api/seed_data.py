@@ -344,9 +344,25 @@ def load_seed_catalog(catalog_path: str | None = None) -> dict[str, Any]:
             "lifecycle.pirate_activity.ambient_strength_decay_per_day",
             pirate_raw.get("ambient_strength_decay_per_day", 0.0),
         ),
+        "merchant_arrival_base_destruction_chance": _ensure_probability(
+            "lifecycle.pirate_activity.merchant_arrival_base_destruction_chance",
+            pirate_raw.get("merchant_arrival_base_destruction_chance", 0.04),
+        ),
         "merchant_arrival_destruction_multiplier": _ensure_positive_number(
             "lifecycle.pirate_activity.merchant_arrival_destruction_multiplier",
             pirate_raw.get("merchant_arrival_destruction_multiplier", 4.0),
+        ),
+        "bounty_hunter_response_bias": _ensure_probability(
+            "lifecycle.pirate_activity.bounty_hunter_response_bias",
+            pirate_raw.get("bounty_hunter_response_bias", 0.9),
+        ),
+        "bounty_hunter_idle_departure_multiplier": _ensure_non_negative_number(
+            "lifecycle.pirate_activity.bounty_hunter_idle_departure_multiplier",
+            pirate_raw.get("bounty_hunter_idle_departure_multiplier", 0.2),
+        ),
+        "bounty_hunter_active_departure_multiplier": _ensure_non_negative_number(
+            "lifecycle.pirate_activity.bounty_hunter_active_departure_multiplier",
+            pirate_raw.get("bounty_hunter_active_departure_multiplier", 6.0),
         ),
         "strength_decay_per_bounty_hunter_arrival": _ensure_non_negative_number(
             "lifecycle.pirate_activity.strength_decay_per_bounty_hunter_arrival",
