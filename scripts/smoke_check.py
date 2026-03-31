@@ -131,10 +131,9 @@ def main() -> None:
         ERROR_PATH.write_text(traceback.format_exc(), encoding="utf-8")
         raise
     finally:
-        generator = app.config.get("space_generator")
-        if generator and generator.is_alive():
-            generator.stop()
-            generator.join(timeout=2)
+        simulation = app.config.get("space_simulation")
+        if simulation:
+            simulation.stop(timeout=2)
         store = app.config.get("space_store")
         if store:
             store.close()
