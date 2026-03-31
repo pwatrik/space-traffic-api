@@ -5,6 +5,7 @@ import queue
 import random
 import threading
 import time
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -14,6 +15,84 @@ from .runtime import RuntimeState
 from .scenarios import SCENARIO_DEFINITIONS
 
 
+def build_effective_lifecycle_config(
+    base_lifecycle: dict[str, Any],
+    scenario_definition: dict[str, Any] | None,
+    intensity: float,
+) -> dict[str, Any]:
+    """Merge base lifecycle config with scenario-specific modifiers."""
+
+    effective = deepcopy(base_lifecycle)
+    if not scenario_definition:
+        return effective
+
+    overrides = scenario_definition.get("lifecycle_overrides")
+    if not isinstance(overrides, dict):
+        return effective
+
+    clamped_intensity = max(0.0, float(intensity))
+
+    def _scale_multiplier(raw_multiplier: Any) -> float:
+        multiplier = max(0.0, float(raw_multiplier))
+        return max(0.0, 1.0 + ((multiplier - 1.0) * clamped_intensity))
+
+    for channel, conf in overrides.items():
+        if not isinstance(conf, dict):
+            continue
+
+        target = effective.setdefault(channel, {})
+        if not isinstance(target, dict):
+            continue
+
+        if "enabled" in conf and clamped_intensity > 0:
+            target["enabled"] = bool(conf["enabled"])
+
+        if "base_probability_per_day_multiplier" in conf and "base_probability_per_day" in target:
+            scale = _scale_multiplier(conf["base_probability_per_day_multiplier"])
+            target["base_probability_per_day"] = max(0.0, float(target["base_probability_per_day"]) * scale)
+
+        if "max_probability_per_day_multiplier" in conf and "max_probability_per_day" in target:
+            scale = _scale_multiplier(conf["max_probability_per_day_multiplier"])
+            target["max_probability_per_day"] = max(0.0, float(target["max_probability_per_day"]) * scale)
+
+        if "base_builds_per_day_multiplier" in conf and "base_builds_per_day" in target:
+            scale = _scale_multiplier(conf["base_builds_per_day_multiplier"])
+            target["base_builds_per_day"] = max(0.0, float(target["base_builds_per_day"]) * scale)
+
+        if "max_losses_per_event_add" in conf and "max_losses_per_event" in target:
+            add = int(round(float(conf["max_losses_per_event_add"]) * clamped_intensity))
+            target["max_losses_per_event"] = max(1, int(target["max_losses_per_event"]) + add)
+
+        if channel == "war_impact":
+            raw = conf.get("faction_loss_multiplier_overrides")
+            if isinstance(raw, dict):
+                current = target.get("faction_loss_multiplier")
+                if isinstance(current, dict):
+                    merged = dict(current)
+                    for faction, faction_multiplier in raw.items():
+                        key = str(faction).strip().lower()
+                        if not key:
+                            continue
+                        scale = _scale_multiplier(faction_multiplier)
+                        merged[key] = max(0.0, float(merged.get(key, 1.0)) * scale)
+                    target["faction_loss_multiplier"] = merged
+
+        if channel == "build_queue" and clamped_intensity > 0:
+            raw = conf.get("faction_distribution")
+            if isinstance(raw, dict) and raw:
+                normalized: dict[str, float] = {}
+                for faction, weight in raw.items():
+                    if not isinstance(weight, (int, float)) or float(weight) <= 0:
+                        continue
+                    key = str(faction).strip().lower()
+                    if key:
+                        normalized[key] = float(weight)
+                if normalized:
+                    target["faction_distribution"] = normalized
+
+    return effective
+
+
 class DepartureGenerator(threading.Thread):
     def __init__(
         self,
@@ -21,6 +100,7 @@ class DepartureGenerator(threading.Thread):
         runtime: RuntimeState,
         stations: list[dict[str, Any]],
         ships: list[dict[str, Any]],
+        catalog: dict[str, Any] | None = None,
     ):
         super().__init__(daemon=True)
         self._store = store
@@ -33,12 +113,17 @@ class DepartureGenerator(threading.Thread):
         self._distance_groups = station_distance_groups(stations)
         self._ship_lookup = {s["id"]: s for s in ships}
         self._station_lookup = {s["id"]: s for s in stations}
+        self._catalog = catalog or {}
+        self._lifecycle = self._catalog.get("lifecycle", {})
+        self._ship_generation = self._catalog.get("ship_generation", {})
 
         self._rng: random.Random | None = None
         self._sim_time: datetime | None = None
         self._event_counter = 0
         self._last_event_uid = ""
         self._next_db_size_check_at = 0.0
+        self._next_ship_sequence = self._store.max_ship_sequence() + 1
+        self._age_update_accumulator_days: float = 0.0
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -54,6 +139,15 @@ class DepartureGenerator(threading.Thread):
             if q in self._subscribers:
                 self._subscribers.remove(q)
 
+    def effective_lifecycle_config(self, scenario: dict[str, Any] | None) -> dict[str, Any]:
+        scenario_definition = SCENARIO_DEFINITIONS.get((scenario or {}).get("name", ""), {})
+        intensity = float((scenario or {}).get("intensity", 1.0))
+        return build_effective_lifecycle_config(
+            base_lifecycle=self._lifecycle,
+            scenario_definition=scenario_definition,
+            intensity=intensity,
+        )
+
     def run(self) -> None:
         while not self._stop_event.is_set():
             state = self._runtime.snapshot()
@@ -66,6 +160,7 @@ class DepartureGenerator(threading.Thread):
             tick_time = self._current_tick_time(state)
 
             self._store.complete_ship_arrivals(tick_time.isoformat())
+            self._apply_lifecycle(interval_seconds=interval_seconds, tick_time=tick_time, scenario=scenario)
 
             if self._is_globally_interrupted(scenario):
                 self._advance_sim_time(state, tick_time, interval_seconds)
@@ -142,6 +237,268 @@ class DepartureGenerator(threading.Thread):
         eff_min = max(1, int(base_min * multiplier))
         eff_max = max(eff_min, int(base_max * multiplier))
         return eff_min, eff_max
+
+    def _apply_lifecycle(
+        self,
+        interval_seconds: float,
+        tick_time: datetime,
+        scenario: dict[str, Any] | None,
+    ) -> None:
+        if interval_seconds <= 0:
+            return
+
+        effective_lifecycle = self.effective_lifecycle_config(scenario)
+
+        elapsed_days = interval_seconds / 86400.0
+
+        flush_threshold_days = 1.0 / 24.0  # flush once per simulated hour
+        self._age_update_accumulator_days += elapsed_days
+        age_update_days = 0.0
+        if self._age_update_accumulator_days >= flush_threshold_days:
+            chunks = int(self._age_update_accumulator_days / flush_threshold_days)
+            age_update_days = chunks * flush_threshold_days
+            self._age_update_accumulator_days -= age_update_days
+
+        if age_update_days > 0.0:
+            self._store.increment_ship_age(age_update_days)
+
+        active_ships = self._store.list_active_ships_for_lifecycle()
+        if not active_ships:
+            return
+
+        self._run_decommission(
+            active_ships=active_ships,
+            elapsed_days=elapsed_days,
+            tick_time=tick_time,
+            lifecycle_conf=effective_lifecycle,
+        )
+        active_ships = self._store.list_active_ships_for_lifecycle()
+        if not active_ships:
+            return
+
+        self._run_war_impact(
+            active_ships=active_ships,
+            elapsed_days=elapsed_days,
+            tick_time=tick_time,
+            lifecycle_conf=effective_lifecycle,
+        )
+        active_ships = self._store.list_active_ships_for_lifecycle()
+        self._run_build_queue(
+            active_ships=active_ships,
+            elapsed_days=elapsed_days,
+            tick_time=tick_time,
+            lifecycle_conf=effective_lifecycle,
+        )
+
+    def _run_decommission(
+        self,
+        active_ships: list[dict[str, Any]],
+        elapsed_days: float,
+        tick_time: datetime,
+        lifecycle_conf: dict[str, Any],
+    ) -> None:
+        conf = lifecycle_conf.get("decommission") or {}
+        if not conf.get("enabled", False):
+            return
+
+        base = float(conf.get("base_probability_per_day", 0.0))
+        if base <= 0:
+            return
+
+        soft_limit_days = float(conf.get("age_years_soft_limit", 18.0)) * 365.0
+        accel = float(conf.get("age_acceleration_per_year", 0.0))
+        max_probability_per_day = float(conf.get("max_probability_per_day", base))
+
+        retired_ids: list[str] = []
+        for ship in active_ships:
+            age_days = float(ship.get("ship_age_days") or 0.0)
+            years_over = max(0.0, (age_days - soft_limit_days) / 365.0)
+            per_day = min(max_probability_per_day, base + (years_over * accel))
+            per_tick = min(1.0, max(0.0, per_day * elapsed_days))
+            if self._rng.random() >= per_tick:
+                continue
+
+            ship_id = ship["ship_id"]
+            if self._store.deactivate_ship(ship_id=ship_id, status="decommissioned", current_station_id=ship.get("current_station_id")):
+                retired_ids.append(ship_id)
+
+        if retired_ids:
+            self._store.insert_control_event(
+                event_type="lifecycle",
+                action="decommissioned",
+                payload={
+                    "ship_ids": retired_ids,
+                    "count": len(retired_ids),
+                    "at": tick_time.isoformat(),
+                },
+            )
+
+    def _run_war_impact(
+        self,
+        active_ships: list[dict[str, Any]],
+        elapsed_days: float,
+        tick_time: datetime,
+        lifecycle_conf: dict[str, Any],
+    ) -> None:
+        conf = lifecycle_conf.get("war_impact") or {}
+        if not conf.get("enabled", False):
+            return
+
+        base = float(conf.get("base_probability_per_day", 0.0))
+        if base <= 0:
+            return
+
+        faction_multiplier = conf.get("faction_loss_multiplier") or {}
+        max_losses = int(conf.get("max_losses_per_event", 1))
+        if max_losses < 1:
+            return
+
+        weighted_candidates: list[dict[str, Any]] = []
+        for ship in active_ships:
+            weight = float(faction_multiplier.get(ship.get("faction"), 1.0))
+            if weight <= 0:
+                continue
+            chance = max(0.0, min(1.0, base * weight * elapsed_days))
+            if self._rng.random() < chance:
+                weighted_candidates.append(ship)
+
+        if not weighted_candidates:
+            return
+
+        self._rng.shuffle(weighted_candidates)
+        selected = weighted_candidates[:max_losses]
+        destroyed: list[str] = []
+        for ship in selected:
+            ship_id = ship["ship_id"]
+            if self._store.deactivate_ship(ship_id=ship_id, status="destroyed", current_station_id=ship.get("current_station_id")):
+                destroyed.append(ship_id)
+
+        if destroyed:
+            self._store.insert_control_event(
+                event_type="lifecycle",
+                action="war_losses",
+                payload={
+                    "ship_ids": destroyed,
+                    "count": len(destroyed),
+                    "at": tick_time.isoformat(),
+                },
+            )
+
+    def _run_build_queue(
+        self,
+        active_ships: list[dict[str, Any]],
+        elapsed_days: float,
+        tick_time: datetime,
+        lifecycle_conf: dict[str, Any],
+    ) -> None:
+        conf = lifecycle_conf.get("build_queue") or {}
+        if not conf.get("enabled", False):
+            return
+
+        base_builds_per_day = float(conf.get("base_builds_per_day", 0.0))
+        max_builds_per_day = int(conf.get("max_builds_per_day", 1))
+        if base_builds_per_day <= 0 or max_builds_per_day < 1:
+            return
+
+        expected_builds = base_builds_per_day * elapsed_days
+        if expected_builds <= 0:
+            return
+
+        builds = int(expected_builds)
+        if self._rng.random() < (expected_builds - builds):
+            builds += 1
+
+        tick_cap = max(1, int(max_builds_per_day * elapsed_days) + 1)
+        builds = min(builds, tick_cap)
+        if builds < 1:
+            return
+
+        faction_weights_raw = conf.get("faction_distribution") or {}
+        faction_weights = {k: float(v) for k, v in faction_weights_raw.items() if float(v) > 0}
+        if not faction_weights:
+            return
+
+        spawn_policy = str(conf.get("spawn_policy", "compatible_random_station")).strip().lower()
+
+        ship_types = self._ship_generation.get("ship_types") or []
+        cargo_types = self._ship_generation.get("cargo_types") or []
+        naming = self._ship_generation.get("naming") or {}
+        adjectives = naming.get("adjectives") or ["Solar"]
+        nouns = naming.get("nouns") or ["Pioneer"]
+        captain_first = naming.get("captain_first") or ["Alex"]
+        captain_last = naming.get("captain_last") or ["Voss"]
+
+        if not ship_types or not cargo_types:
+            return
+
+        ship_types_by_faction: dict[str, list[dict[str, Any]]] = {}
+        for ship_type in ship_types:
+            ship_types_by_faction.setdefault(ship_type.get("faction"), []).append(ship_type)
+
+        built_ship_ids: list[str] = []
+        for _ in range(builds):
+            faction = self._pick_weighted_key(faction_weights)
+            candidates = ship_types_by_faction.get(faction) or ship_types
+            choice = self._rng.choice(candidates)
+            size_class = str(choice.get("size_class") or "medium").strip().lower()
+            home_station_id = self._pick_station_by_policy(spawn_policy, size_class)
+            if not home_station_id:
+                continue
+
+            ship_id = f"SHIP-{self._next_ship_sequence:04d}"
+            self._next_ship_sequence += 1
+            ship = {
+                "id": ship_id,
+                "name": f"{self._rng.choice(adjectives)} {self._rng.choice(nouns)}",
+                "faction": str(choice.get("faction") or faction),
+                "ship_type": str(choice.get("name") or "Auxiliary"),
+                "size_class": size_class,
+                "displacement_million_m3": round(self._rng.uniform(0.8, 22.0), 3),
+                "home_station_id": home_station_id,
+                "captain_name": f"{self._rng.choice(captain_first)} {self._rng.choice(captain_last)}",
+                "cargo": self._rng.choice(cargo_types),
+            }
+            self._store.seed_ships([ship])
+            self._store.seed_ship_states([ship])
+            self._ship_lookup[ship_id] = ship
+            built_ship_ids.append(ship_id)
+
+        if built_ship_ids:
+            self._store.insert_control_event(
+                event_type="lifecycle",
+                action="ships_built",
+                payload={
+                    "ship_ids": built_ship_ids,
+                    "count": len(built_ship_ids),
+                    "at": tick_time.isoformat(),
+                },
+            )
+
+    def _pick_weighted_key(self, weights: dict[str, float]) -> str:
+        total = sum(weights.values())
+        threshold = self._rng.random() * total
+        running = 0.0
+        for key, weight in weights.items():
+            running += weight
+            if threshold <= running:
+                return key
+        return next(iter(weights))
+
+    def _pick_station_by_policy(self, policy: str, size_class: str) -> str | None:
+        """Return a home station ID for a newly built ship using the given spawn policy."""
+        if policy == "any_random_station":
+            station_ids = list(self._station_lookup.keys())
+            if not station_ids:
+                return None
+            return self._rng.choice(station_ids)
+        # Default / "compatible_random_station": restrict to stations that accept the size class.
+        return self._pick_compatible_station(size_class)
+
+    def _pick_compatible_station(self, size_class: str) -> str | None:
+        station_ids = [sid for sid in self._station_lookup if self._station_accepts_size_class(sid, size_class)]
+        if not station_ids:
+            return None
+        return self._rng.choice(station_ids)
 
     def _is_globally_interrupted(self, scenario: dict[str, Any] | None) -> bool:
         if not scenario or scenario.get("name") != "solar_flare":

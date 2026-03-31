@@ -184,5 +184,35 @@
       "ship_count": 220,
       "ship_seed": 9001
     }
+  },
+  "lifecycle": {
+    "decommission": {
+      "enabled": true,
+      "base_probability_per_day": 0.0006,
+      "age_years_soft_limit": 18,
+      "age_acceleration_per_year": 0.00025,
+      "max_probability_per_day": 0.015
+    },
+    "war_impact": {
+      "enabled": true,
+      "base_probability_per_day": 0.0012,
+      "faction_loss_multiplier": {
+        "merchant": 1.35,
+        "government": 1.0,
+        "military": 0.7
+      },
+      "max_losses_per_event": 3
+    },
+    "build_queue": {
+      "enabled": true,
+      "base_builds_per_day": 1.8,
+      "max_builds_per_day": 5,
+      "faction_distribution": {
+        "merchant": 0.55,
+        "government": 0.25,
+        "military": 0.2
+      },
+      "spawn_policy": "compatible_random_station"
+    }
   }
 }
