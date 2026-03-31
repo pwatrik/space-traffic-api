@@ -13,7 +13,7 @@ The machine-readable spec is available at `GET /openapi.yaml` (no auth required)
 - **Departure generation** — 10–20 events/minute baseline; persisted to SQLite with automatic size-capped culling.
 - **Pagination** — `/ships` and `/stations` support `limit`, `offset`, `order_by`, `order`.
 - **Aggregate stats** — `GET /stats` returns counts by faction, ship type, cargo, and state.
-- **Auth** — Static API key via `X-API-Key` or `Authorization: Bearer`.
+- **Public API** — All endpoints are accessible without authentication.
 - **Event streaming** — Polling (`/departures`) and SSE (`/departures/stream`); same for control events.
 - **Control plane** — Deterministic replay, named scenario bursts, fault injection, and reset.
 - **Pirate activity** — Localized risk zones suppressed by bounty hunter arrivals; strength tracked in `/config`.
@@ -32,20 +32,12 @@ Server starts on `http://localhost:8000`.
 
 ```powershell
 docker build -t space-traffic-api .
-docker run --rm -p 8000:8000 -e SPACE_TRAFFIC_API_KEY=space-demo-key space-traffic-api
+docker run --rm -p 8000:8000 space-traffic-api
 ```
 
 ## Authentication
 
-All endpoints except `GET /healthz` and `GET /openapi.yaml` require an API key.
-
-```
-X-API-Key: space-demo-key
-```
-or
-```
-Authorization: Bearer space-demo-key
-```
+No authentication is required. All endpoints are public.
 
 ---
 
@@ -54,7 +46,7 @@ Authorization: Bearer space-demo-key
 ### Health
 
 #### `GET /healthz`
-No auth required.
+Public endpoint.
 
 **Response:**
 ```json
@@ -74,7 +66,7 @@ No auth required.
 ```
 
 #### `GET /openapi.yaml`
-Returns the OpenAPI 3.1 YAML spec. No auth required. Import directly into Postman or Insomnia.
+Returns the OpenAPI 3.1 YAML spec. Public endpoint; import directly into Postman or Insomnia.
 
 ---
 
@@ -292,7 +284,6 @@ Returns full runtime snapshot including merged `effective_lifecycle` and `effect
 
 ```powershell
 Invoke-RestMethod -Method Patch -Uri "http://localhost:8000/config" `
-  -Headers @{ "X-API-Key" = "space-demo-key" } `
   -ContentType "application/json" `
   -Body '{"deterministic_mode": true, "deterministic_seed": 1337}'
 ```
@@ -317,7 +308,6 @@ Returns available scenarios and the currently active one.
 
 ```powershell
 Invoke-RestMethod -Method Post -Uri "http://localhost:8000/scenarios/activate" `
-  -Headers @{ "X-API-Key" = "space-demo-key" } `
   -ContentType "application/json" `
   -Body '{"name": "war", "intensity": 1.5, "duration_seconds": 300}'
 ```
@@ -349,7 +339,6 @@ Per-fault config:
 
 ```powershell
 Invoke-RestMethod -Method Post -Uri "http://localhost:8000/faults/activate" `
-  -Headers @{ "X-API-Key" = "space-demo-key" } `
   -ContentType "application/json" `
   -Body '{"faults": {"out_of_order_timestamp": {"rate": 0.2}, "malformed_payload": {"rate": 0.1}}}'
 ```
@@ -371,13 +360,11 @@ Clears departure and ship-state history. Resets all ships to home stations. Re-s
 ```powershell
 # 1. Enable deterministic mode
 Invoke-RestMethod -Method Patch -Uri "http://localhost:8000/config" `
-  -Headers @{ "X-API-Key" = "space-demo-key" } `
   -ContentType "application/json" `
   -Body '{"deterministic_mode": true, "deterministic_seed": 1337}'
 
 # 2. Reset and seed
 Invoke-RestMethod -Method Post -Uri "http://localhost:8000/control/reset" `
-  -Headers @{ "X-API-Key" = "space-demo-key" } `
   -ContentType "application/json" `
   -Body '{"seed": 1337}'
 ```
@@ -393,7 +380,7 @@ Invoke-RestMethod -Method Post -Uri "http://localhost:8000/control/reset" `
 .\.venv\Scripts\python.exe scripts\container_sanity_check.py
 ```
 
-Optional overrides: `SPACE_TRAFFIC_BASE_URL`, `SPACE_TRAFFIC_API_KEY`
+Optional overrides: `SPACE_TRAFFIC_BASE_URL`
 
 ---
 

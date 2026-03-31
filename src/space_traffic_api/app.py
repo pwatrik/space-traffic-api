@@ -31,7 +31,6 @@ def create_app() -> Flask:
     app = Flask(__name__)
     app.register_blueprint(
         create_api_blueprint(
-            api_key=config.api_key,
             store=store,
             simulation=simulation,
         )
