@@ -48,6 +48,7 @@ class SQLiteStore:
                     status TEXT NOT NULL,
                     current_station_id TEXT,
                     in_transit INTEGER NOT NULL DEFAULT 0,
+                    ship_age_days REAL NOT NULL DEFAULT 0,
                     source_station_id TEXT,
                     destination_station_id TEXT,
                     departure_time TEXT,
@@ -98,6 +99,7 @@ class SQLiteStore:
             # Backfill columns for pre-migration databases where tables already existed.
             self._ensure_column("stations", "allowed_size_classes", "TEXT NOT NULL DEFAULT '[]'")
             self._ensure_column("ships", "size_class", "TEXT NOT NULL DEFAULT 'medium'")
+            self._ensure_column("ship_state", "ship_age_days", "REAL NOT NULL DEFAULT 0")
             self._context.conn.commit()
 
     def _ensure_column(self, table_name: str, column_name: str, column_sql: str) -> None:
@@ -146,6 +148,18 @@ class SQLiteStore:
 
     def list_available_ships(self) -> list[dict[str, Any]]:
         return self.fleet.list_available_ships()
+
+    def list_active_ships_for_lifecycle(self) -> list[dict[str, Any]]:
+        return self.fleet.list_active_ships_for_lifecycle()
+
+    def increment_ship_age(self, elapsed_days: float) -> int:
+        return self.fleet.increment_ship_age(elapsed_days)
+
+    def deactivate_ship(self, ship_id: str, status: str, current_station_id: str | None = None) -> bool:
+        return self.fleet.deactivate_ship(ship_id=ship_id, status=status, current_station_id=current_station_id)
+
+    def max_ship_sequence(self) -> int:
+        return self.fleet.max_ship_sequence()
 
     def begin_ship_transit(
         self,

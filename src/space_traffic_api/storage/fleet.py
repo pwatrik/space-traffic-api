@@ -81,6 +81,7 @@ class FleetRepository:
                 ss.destination_station_id,
                 ss.departure_time,
                 ss.est_arrival_time,
+                ss.ship_age_days,
                 ss.updated_at
             FROM ship_state ss
             JOIN ships s ON s.id = ss.ship_id
@@ -110,6 +111,78 @@ class FleetRepository:
         with self._context.lock:
             rows = self._context.conn.execute(query).fetchall()
         return [dict(row) for row in rows]
+
+    def list_active_ships_for_lifecycle(self) -> list[dict[str, Any]]:
+        query = """
+            SELECT
+                ss.ship_id,
+                ss.current_station_id,
+                ss.in_transit,
+                ss.ship_age_days,
+                s.faction,
+                s.ship_type,
+                s.size_class,
+                s.home_station_id
+            FROM ship_state ss
+            JOIN ships s ON s.id = ss.ship_id
+            WHERE ss.status = 'active'
+            ORDER BY ss.ship_id
+        """
+        with self._context.lock:
+            rows = self._context.conn.execute(query).fetchall()
+        return [dict(row) for row in rows]
+
+    def increment_ship_age(self, elapsed_days: float) -> int:
+        if elapsed_days <= 0:
+            return 0
+
+        now = datetime.now(UTC).isoformat()
+        with self._context.lock:
+            cur = self._context.conn.execute(
+                """
+                UPDATE ship_state
+                SET
+                    ship_age_days = ship_age_days + ?,
+                    updated_at = ?
+                WHERE status = 'active'
+                """,
+                (elapsed_days, now),
+            )
+            self._context.conn.commit()
+            return int(cur.rowcount)
+
+    def deactivate_ship(self, ship_id: str, status: str, current_station_id: str | None = None) -> bool:
+        now = datetime.now(UTC).isoformat()
+        with self._context.lock:
+            cur = self._context.conn.execute(
+                """
+                UPDATE ship_state
+                SET
+                    status = ?,
+                    in_transit = 0,
+                    current_station_id = ?,
+                    source_station_id = NULL,
+                    destination_station_id = NULL,
+                    departure_time = NULL,
+                    est_arrival_time = NULL,
+                    updated_at = ?
+                WHERE ship_id = ?
+                """,
+                (status, current_station_id, now, ship_id),
+            )
+            self._context.conn.commit()
+            return int(cur.rowcount) > 0
+
+    def max_ship_sequence(self) -> int:
+        with self._context.lock:
+            row = self._context.conn.execute(
+                """
+                SELECT MAX(CAST(SUBSTR(id, 6) AS INTEGER))
+                FROM ships
+                WHERE id LIKE 'SHIP-%'
+                """
+            ).fetchone()
+        return int(row[0] or 0)
 
     def begin_transit(
         self,
@@ -194,6 +267,7 @@ class FleetRepository:
                     destination_station_id = NULL,
                     departure_time = NULL,
                     est_arrival_time = NULL,
+                    ship_age_days = 0,
                     updated_at = ?
                 """,
                 (now,),

@@ -6,7 +6,7 @@ from flask import Flask
 
 from .api import create_api_blueprint
 from .config import AppConfig
-from .seed_data import build_ships, build_stations
+from .seed_data import build_ships, build_stations, load_seed_catalog
 from .simulation import SimulationService
 from .store import SQLiteStore
 
@@ -16,14 +16,15 @@ def create_app() -> Flask:
     store = SQLiteStore(config.db_path)
     store.init_schema()
 
-    stations = build_stations(catalog_path=config.seed_catalog_path)
-    ships = build_ships(stations=stations, catalog_path=config.seed_catalog_path)
+    catalog = load_seed_catalog(config.seed_catalog_path)
+    stations = build_stations(catalog_path=config.seed_catalog_path, catalog=catalog)
+    ships = build_ships(stations=stations, catalog_path=config.seed_catalog_path, catalog=catalog)
 
     store.seed_stations(stations)
     store.seed_ships(ships)
     store.seed_ship_states(ships)
 
-    simulation = SimulationService(config=config, store=store, stations=stations, ships=ships)
+    simulation = SimulationService(config=config, store=store, stations=stations, ships=ships, catalog=catalog)
     if not config.disable_generator:
         simulation.start()
 

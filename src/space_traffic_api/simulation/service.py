@@ -18,9 +18,16 @@ class SimulationService:
         store: SQLiteStore,
         stations: list[dict[str, Any]],
         ships: list[dict[str, Any]],
+        catalog: dict[str, Any] | None = None,
     ):
         self._runtime = RuntimeState(config=config, store=store)
-        self._generator = DepartureGenerator(store=store, runtime=self._runtime, stations=stations, ships=ships)
+        self._generator = DepartureGenerator(
+            store=store,
+            runtime=self._runtime,
+            stations=stations,
+            ships=ships,
+            catalog=catalog,
+        )
 
     def start(self) -> None:
         if not self._generator.is_alive():

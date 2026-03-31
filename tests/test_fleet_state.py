@@ -19,6 +19,8 @@ def test_ship_state_seeded_and_resettable(monkeypatch):
             body = states.get_json()
             assert body["count"] == 220
             assert all(ship["in_transit"] == 0 for ship in body["ships"])
+            assert all("ship_age_days" in ship for ship in body["ships"])
+            assert all(float(ship["ship_age_days"]) == 0.0 for ship in body["ships"])
 
             reset = client.post("/control/reset", headers=headers, json={"seed": 777})
             assert reset.status_code == 200
@@ -27,5 +29,6 @@ def test_ship_state_seeded_and_resettable(monkeypatch):
             assert states_after.status_code == 200
             body_after = states_after.get_json()
             assert all(ship["in_transit"] == 0 for ship in body_after["ships"])
+            assert all(float(ship["ship_age_days"]) == 0.0 for ship in body_after["ships"])
         finally:
             app.config["space_store"].close()

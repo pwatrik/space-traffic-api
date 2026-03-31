@@ -17,6 +17,12 @@ def test_default_seed_catalog_builds_expected_ids():
     assert len(ships) == 220
     assert ships[0]["id"] == "SHIP-0001"
 
+    catalog = load_seed_catalog()
+    lifecycle = catalog["lifecycle"]
+    assert lifecycle["decommission"]["enabled"] is True
+    assert lifecycle["war_impact"]["enabled"] is True
+    assert lifecycle["build_queue"]["enabled"] is True
+
 
 def test_custom_seed_catalog_defaults_are_applied():
     custom = {
@@ -61,6 +67,28 @@ def test_custom_seed_catalog_defaults_are_applied():
             },
             "defaults": {"ship_count": 3, "ship_seed": 42},
         },
+        "lifecycle": {
+            "decommission": {
+                "enabled": True,
+                "base_probability_per_day": 0.001,
+                "age_years_soft_limit": 10,
+                "age_acceleration_per_year": 0.0002,
+                "max_probability_per_day": 0.02,
+            },
+            "war_impact": {
+                "enabled": True,
+                "base_probability_per_day": 0.002,
+                "faction_loss_multiplier": {"merchant": 1.5},
+                "max_losses_per_event": 2,
+            },
+            "build_queue": {
+                "enabled": True,
+                "base_builds_per_day": 2.0,
+                "max_builds_per_day": 4,
+                "faction_distribution": {"merchant": 1.0},
+                "spawn_policy": "compatible_random_station",
+            },
+        },
     }
 
     with TemporaryDirectory() as tmp:
@@ -70,10 +98,14 @@ def test_custom_seed_catalog_defaults_are_applied():
 
         stations = build_stations(catalog_path=path)
         ships = build_ships(stations=stations, catalog_path=path)
+        catalog = load_seed_catalog(path)
 
     assert len(stations) == 2
     assert len(ships) == 3
     assert all(ship["ship_type"] == "Freighter" for ship in ships)
+    assert catalog["lifecycle"]["decommission"]["age_years_soft_limit"] == 10.0
+    assert catalog["lifecycle"]["war_impact"]["max_losses_per_event"] == 2
+    assert catalog["lifecycle"]["build_queue"]["base_builds_per_day"] == 2.0
 
 
 def test_invalid_seed_catalog_raises():

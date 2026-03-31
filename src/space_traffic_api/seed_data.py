@@ -30,6 +30,38 @@ def _normalize_size_classes(path: str, value: Any) -> list[str]:
     return normalized
 
 
+def _ensure_probability(path: str, value: Any) -> float:
+    if not isinstance(value, (int, float)):
+        raise ValueError(f"{path} must be a number")
+    probability = float(value)
+    if probability < 0:
+        raise ValueError(f"{path} must be non-negative")
+    return probability
+
+
+def _ensure_positive_number(path: str, value: Any) -> float:
+    if not isinstance(value, (int, float)):
+        raise ValueError(f"{path} must be a number")
+    number = float(value)
+    if number <= 0:
+        raise ValueError(f"{path} must be greater than 0")
+    return number
+
+
+def _normalize_weight_map(path: str, value: Any) -> dict[str, float]:
+    if not isinstance(value, dict) or not value:
+        raise ValueError(f"{path} must be a non-empty object")
+
+    weights: dict[str, float] = {}
+    for key, raw_weight in value.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError(f"{path} keys must be non-empty strings")
+        if not isinstance(raw_weight, (int, float)) or float(raw_weight) <= 0:
+            raise ValueError(f"{path}.{key} must be a positive number")
+        weights[key.strip().lower()] = float(raw_weight)
+    return weights
+
+
 def load_seed_catalog(catalog_path: str | None = None) -> dict[str, Any]:
     path = Path(catalog_path) if catalog_path else _default_catalog_path()
     if not path.exists():
@@ -109,16 +141,9 @@ def load_seed_catalog(catalog_path: str | None = None) -> dict[str, Any]:
             ),
         }
 
-    faction_distribution = ship_generation.get("faction_distribution")
-    if not isinstance(faction_distribution, dict) or not faction_distribution:
-        raise ValueError("ship_generation.faction_distribution must be a non-empty object")
-    normalized_distribution: dict[str, float] = {}
-    for faction, weight in faction_distribution.items():
-        if not isinstance(faction, str) or not faction:
-            raise ValueError("ship_generation.faction_distribution keys must be non-empty strings")
-        if not isinstance(weight, (int, float)) or float(weight) <= 0:
-            raise ValueError("ship_generation.faction_distribution values must be positive numbers")
-        normalized_distribution[faction] = float(weight)
+    normalized_distribution = _normalize_weight_map(
+        "ship_generation.faction_distribution", ship_generation.get("faction_distribution")
+    )
 
     ship_types_raw = ship_generation.get("ship_types")
     if not isinstance(ship_types_raw, list) or not ship_types_raw:
@@ -154,6 +179,87 @@ def load_seed_catalog(catalog_path: str | None = None) -> dict[str, Any]:
     if not isinstance(ship_seed, int):
         raise ValueError("ship_generation.defaults.ship_seed must be an integer")
 
+    lifecycle_raw = raw.get("lifecycle", {})
+    if lifecycle_raw is None:
+        lifecycle_raw = {}
+    if not isinstance(lifecycle_raw, dict):
+        raise ValueError("lifecycle must be an object")
+
+    decommission_raw = lifecycle_raw.get("decommission", {})
+    if decommission_raw is None:
+        decommission_raw = {}
+    if not isinstance(decommission_raw, dict):
+        raise ValueError("lifecycle.decommission must be an object")
+    decommission = {
+        "enabled": bool(decommission_raw.get("enabled", True)),
+        "base_probability_per_day": _ensure_probability(
+            "lifecycle.decommission.base_probability_per_day",
+            decommission_raw.get("base_probability_per_day", 0.0006),
+        ),
+        "age_years_soft_limit": _ensure_positive_number(
+            "lifecycle.decommission.age_years_soft_limit",
+            decommission_raw.get("age_years_soft_limit", 18),
+        ),
+        "age_acceleration_per_year": _ensure_probability(
+            "lifecycle.decommission.age_acceleration_per_year",
+            decommission_raw.get("age_acceleration_per_year", 0.00025),
+        ),
+        "max_probability_per_day": _ensure_probability(
+            "lifecycle.decommission.max_probability_per_day",
+            decommission_raw.get("max_probability_per_day", 0.015),
+        ),
+    }
+
+    war_raw = lifecycle_raw.get("war_impact", {})
+    if war_raw is None:
+        war_raw = {}
+    if not isinstance(war_raw, dict):
+        raise ValueError("lifecycle.war_impact must be an object")
+    war_faction_multipliers = _normalize_weight_map(
+        "lifecycle.war_impact.faction_loss_multiplier",
+        war_raw.get(
+            "faction_loss_multiplier",
+            {"merchant": 1.35, "government": 1.0, "military": 0.7},
+        ),
+    )
+    max_losses_per_event = war_raw.get("max_losses_per_event", 3)
+    if not isinstance(max_losses_per_event, int) or max_losses_per_event < 1:
+        raise ValueError("lifecycle.war_impact.max_losses_per_event must be a positive integer")
+    war_impact = {
+        "enabled": bool(war_raw.get("enabled", True)),
+        "base_probability_per_day": _ensure_probability(
+            "lifecycle.war_impact.base_probability_per_day",
+            war_raw.get("base_probability_per_day", 0.0012),
+        ),
+        "faction_loss_multiplier": war_faction_multipliers,
+        "max_losses_per_event": max_losses_per_event,
+    }
+
+    build_raw = lifecycle_raw.get("build_queue", {})
+    if build_raw is None:
+        build_raw = {}
+    if not isinstance(build_raw, dict):
+        raise ValueError("lifecycle.build_queue must be an object")
+    max_builds_per_day = build_raw.get("max_builds_per_day", 5)
+    if not isinstance(max_builds_per_day, int) or max_builds_per_day < 1:
+        raise ValueError("lifecycle.build_queue.max_builds_per_day must be a positive integer")
+    spawn_policy = build_raw.get("spawn_policy", "compatible_random_station")
+    if not isinstance(spawn_policy, str) or not spawn_policy.strip():
+        raise ValueError("lifecycle.build_queue.spawn_policy must be a non-empty string")
+    build_queue = {
+        "enabled": bool(build_raw.get("enabled", True)),
+        "base_builds_per_day": _ensure_probability(
+            "lifecycle.build_queue.base_builds_per_day",
+            build_raw.get("base_builds_per_day", 1.8),
+        ),
+        "max_builds_per_day": max_builds_per_day,
+        "faction_distribution": _normalize_weight_map(
+            "lifecycle.build_queue.faction_distribution",
+            build_raw.get("faction_distribution", normalized_distribution),
+        ),
+        "spawn_policy": spawn_policy.strip().lower(),
+    }
+
     return {
         "celestial": {
             "planets": planets,
@@ -179,11 +285,16 @@ def load_seed_catalog(catalog_path: str | None = None) -> dict[str, Any]:
                 "ship_seed": ship_seed,
             },
         },
+        "lifecycle": {
+            "decommission": decommission,
+            "war_impact": war_impact,
+            "build_queue": build_queue,
+        },
     }
 
 
-def build_stations(catalog_path: str | None = None) -> list[dict[str, Any]]:
-    catalog = load_seed_catalog(catalog_path)
+def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    catalog = catalog or load_seed_catalog(catalog_path)
     templates = catalog["stations"]["templates"]
     stations: list[dict[str, Any]] = []
 
@@ -250,8 +361,9 @@ def build_ships(
     count: int | None = None,
     seed: int | None = None,
     catalog_path: str | None = None,
+    catalog: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    catalog = load_seed_catalog(catalog_path)
+    catalog = catalog or load_seed_catalog(catalog_path)
     ship_generation = catalog["ship_generation"]
     defaults = ship_generation["defaults"]
     ship_types_by_faction: dict[str, list[dict[str, Any]]] = {}
