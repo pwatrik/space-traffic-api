@@ -1,4 +1,4 @@
-﻿openapi: 3.1.0
+openapi: 3.1.0
 info:
   title: Space Traffic API
   version: "1.1"
@@ -51,9 +51,255 @@ components:
   schemas:
     ErrorResponse:
       type: object
+      required: [error]
       properties:
         error:
           type: string
+          example: unknown scenario 'blastoff'
+
+    Counts:
+      type: object
+      required: [stations, ships, ships_in_transit, departures, control_events]
+      properties:
+        stations:
+          type: integer
+          example: 40
+        ships:
+          type: integer
+          example: 500
+        ships_in_transit:
+          type: integer
+          example: 38
+        departures:
+          type: integer
+          example: 14203
+        control_events:
+          type: integer
+          example: 12
+
+    Station:
+      type: object
+      required: [id, name, body_name, body_type, parent_body, allowed_size_classes]
+      properties:
+        id:
+          type: string
+          example: STN-PLANET-EARTH
+        name:
+          type: string
+          example: Avalon Prime Port
+        body_name:
+          type: string
+          example: Earth
+        body_type:
+          type: string
+          enum: [planet, moon, asteroid]
+        parent_body:
+          type: string
+          example: Sun
+        allowed_size_classes:
+          type: array
+          items:
+            type: string
+            enum: [small, medium, large, xlarge]
+          example: [small, medium]
+
+    Ship:
+      type: object
+      required: [id, name, faction, ship_type, size_class, displacement_million_m3, home_station_id, captain_name, cargo]
+      properties:
+        id:
+          type: string
+          example: SHIP-00042
+        name:
+          type: string
+          example: Iron Pioneer
+        faction:
+          type: string
+          enum: [merchant, government, military, bounty_hunter]
+        ship_type:
+          type: string
+          example: Freighter
+        size_class:
+          type: string
+          enum: [small, medium, large, xlarge]
+        displacement_million_m3:
+          type: number
+          format: float
+          example: 1.4
+        home_station_id:
+          type: string
+          example: STN-MOON-TITAN
+        captain_name:
+          type: string
+          example: Mira Voss
+        cargo:
+          type: string
+          example: titanium_alloy_billets
+
+    ShipState:
+      type: object
+      required: [ship_id, status, in_transit, ship_age_days, updated_at]
+      properties:
+        ship_id:
+          type: string
+          example: SHIP-00042
+        status:
+          type: string
+          enum: [active, decommissioned, destroyed]
+        current_station_id:
+          type: [string, "null"]
+          example: STN-PLANET-MARS
+        in_transit:
+          type: integer
+          enum: [0, 1]
+        source_station_id:
+          type: [string, "null"]
+          example: STN-MOON-TITAN
+        destination_station_id:
+          type: [string, "null"]
+          example: STN-PLANET-EARTH
+        departure_time:
+          type: [string, "null"]
+          format: date-time
+        est_arrival_time:
+          type: [string, "null"]
+          format: date-time
+        ship_age_days:
+          type: number
+          format: float
+          example: 1482.5
+        updated_at:
+          type: string
+          format: date-time
+
+    Departure:
+      type: object
+      required: [id, event_uid, departure_time, malformed, fault_flags]
+      properties:
+        id:
+          type: integer
+          description: Auto-incrementing row ID. Use as cursor for polling.
+          example: 1024
+        event_uid:
+          type: string
+          example: EVT-20150101-0042-SHIP-00042
+        departure_time:
+          type: string
+          format: date-time
+        ship_id:
+          type: [string, "null"]
+          example: SHIP-00042
+        source_station_id:
+          type: [string, "null"]
+          example: STN-MOON-TITAN
+        destination_station_id:
+          type: [string, "null"]
+          example: STN-PLANET-EARTH
+        est_arrival_time:
+          type: [string, "null"]
+          format: date-time
+        scenario:
+          type: [string, "null"]
+          description: Active scenario name at time of departure, or null.
+          example: war
+        fault_flags:
+          type: array
+          items:
+            type: string
+          description: List of active fault types that affected this event.
+          example: []
+        malformed:
+          type: boolean
+          description: True if the payload field was intentionally corrupted by fault injection.
+        payload:
+          description: Full structured departure payload, or null/corrupt string if malformed.
+
+    ControlEvent:
+      type: object
+      required: [id, event_time, event_type, action, payload]
+      properties:
+        id:
+          type: integer
+          description: Auto-incrementing row ID. Use as cursor for polling.
+          example: 7
+        event_time:
+          type: string
+          format: date-time
+        event_type:
+          type: string
+          enum: [control, scenario, fault, lifecycle, pirate]
+          example: scenario
+        action:
+          type: string
+          example: activated
+        payload:
+          type: object
+          description: Event-specific details (scenario config, fault names, reset seed, etc.).
+
+    ActiveScenario:
+      type: [object, "null"]
+      properties:
+        name:
+          type: string
+          enum: [war, shortage, solar_flare]
+        intensity:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 5.0
+          example: 1.5
+        duration_seconds:
+          type: integer
+          example: 300
+        scope:
+          type: object
+          properties:
+            type:
+              type: string
+              enum: [global, region]
+        started_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+
+    FaultEntry:
+      type: object
+      required: [rate, scope, duration_seconds, started_at]
+      properties:
+        rate:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          example: 0.2
+        scope:
+          type: object
+        duration_seconds:
+          type: integer
+          example: 300
+        started_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: [string, "null"]
+          format: date-time
+
+    PaginatedMeta:
+      type: object
+      required: [count, total_count, offset, limit]
+      properties:
+        count:
+          type: integer
+          description: Number of items in this response.
+        total_count:
+          type: integer
+          description: Total matching items across all pages.
+        offset:
+          type: integer
+        limit:
+          type: integer
 
 paths:
   /openapi.yaml:
@@ -73,6 +319,34 @@ paths:
       responses:
         "200":
           description: Service status and counts
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, server_time, counts, db_size_bytes, db_max_size_bytes]
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  server_time:
+                    type: string
+                    format: date-time
+                  counts:
+                    $ref: "#/components/schemas/Counts"
+                  active_scenario:
+                    $ref: "#/components/schemas/ActiveScenario"
+                  active_faults:
+                    type: object
+                    additionalProperties:
+                      $ref: "#/components/schemas/FaultEntry"
+                  deterministic_mode:
+                    type: boolean
+                  db_size_bytes:
+                    type: integer
+                    example: 10485760
+                  db_max_size_bytes:
+                    type: integer
+                    example: 536870912
 
   /stations:
     get:
@@ -95,6 +369,18 @@ paths:
       responses:
         "200":
           description: Paginated station list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedMeta"
+                  - type: object
+                    required: [stations]
+                    properties:
+                      stations:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Station"
 
   /ships:
     get:
@@ -129,6 +415,18 @@ paths:
       responses:
         "200":
           description: Paginated ship list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedMeta"
+                  - type: object
+                    required: [ships]
+                    properties:
+                      ships:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Ship"
 
   /ships/state:
     get:
@@ -154,6 +452,18 @@ paths:
       responses:
         "200":
           description: Ship state list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ships, count]
+                properties:
+                  ships:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ShipState"
+                  count:
+                    type: integer
 
   /stats:
     get:
@@ -161,6 +471,47 @@ paths:
       responses:
         "200":
           description: Aggregate counts and scenario/pirate metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [summary, factions, ship_types, cargo_types, ship_states, pirate_strength]
+                properties:
+                  summary:
+                    $ref: "#/components/schemas/Counts"
+                  factions:
+                    type: object
+                    description: Ship count keyed by faction name.
+                    additionalProperties:
+                      type: integer
+                    example:
+                      merchant: 180
+                      government: 75
+                      military: 60
+                      bounty_hunter: 185
+                  ship_types:
+                    type: object
+                    description: Ship count keyed by ship_type.
+                    additionalProperties:
+                      type: integer
+                  cargo_types:
+                    type: object
+                    description: Ship count keyed by primary cargo type.
+                    additionalProperties:
+                      type: integer
+                  ship_states:
+                    type: object
+                    description: Ship count keyed by status.
+                    additionalProperties:
+                      type: integer
+                  pirate_strength:
+                    type: number
+                    format: float
+                    minimum: 0.0
+                    maximum: 1.0
+                    example: 0.82
+                  active_scenario:
+                    $ref: "#/components/schemas/ActiveScenario"
 
   /departures:
     get:
@@ -177,6 +528,21 @@ paths:
       responses:
         "200":
           description: Departure events page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [departures, count, next_since_id]
+                properties:
+                  departures:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Departure"
+                  count:
+                    type: integer
+                  next_since_id:
+                    type: [integer, "null"]
+                    description: Pass as since_id on your next call to get only new events.
 
   /departures/stream:
     get:
@@ -199,6 +565,20 @@ paths:
       responses:
         "200":
           description: Control events page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [control_events, count, next_since_id]
+                properties:
+                  control_events:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ControlEvent"
+                  count:
+                    type: integer
+                  next_since_id:
+                    type: [integer, "null"]
 
   /control-events/stream:
     get:
@@ -217,6 +597,51 @@ paths:
       responses:
         "200":
           description: Runtime configuration and active scenario/fault state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  base_min_events_per_minute:
+                    type: number
+                  base_max_events_per_minute:
+                    type: number
+                  deterministic_mode:
+                    type: boolean
+                  deterministic_seed:
+                    type: [integer, "null"]
+                  retention_max_rows:
+                    type: integer
+                  db_max_size_mb:
+                    type: integer
+                  active_scenario:
+                    $ref: "#/components/schemas/ActiveScenario"
+                  active_faults:
+                    type: object
+                    additionalProperties:
+                      $ref: "#/components/schemas/FaultEntry"
+                  pirate_event:
+                    type: object
+                    properties:
+                      active:
+                        type: boolean
+                      anchor_body:
+                        type: [string, "null"]
+                      strength:
+                        type: number
+                      started_at:
+                        type: [string, "null"]
+                        format: date-time
+                      affected_station_ids:
+                        type: array
+                        items:
+                          type: string
+                  effective_lifecycle:
+                    type: object
+                    description: Lifecycle config merged with any active scenario overrides.
+                  effective_ship_generation:
+                    type: object
+                    description: Ship generation config merged with any active scenario overrides.
     patch:
       summary: Patch runtime configuration
       requestBody:
@@ -236,6 +661,11 @@ paths:
       responses:
         "200":
           description: Updated runtime snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Updated runtime snapshot (same schema as GET /config).
 
   /scenarios:
     get:
@@ -243,6 +673,28 @@ paths:
       responses:
         "200":
           description: Available and active scenario data
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [available, active]
+                properties:
+                  available:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, description, rate_multiplier]
+                      properties:
+                        name:
+                          type: string
+                          enum: [war, shortage, solar_flare]
+                        description:
+                          type: string
+                        rate_multiplier:
+                          type: number
+                          description: Multiplier applied to the base departure rate.
+                  active:
+                    $ref: "#/components/schemas/ActiveScenario"
 
   /scenarios/activate:
     post:
@@ -272,6 +724,14 @@ paths:
       responses:
         "200":
           description: Active scenario set
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [active_scenario]
+                properties:
+                  active_scenario:
+                    $ref: "#/components/schemas/ActiveScenario"
         "400":
           description: Invalid scenario payload
           content:
@@ -285,6 +745,13 @@ paths:
       responses:
         "200":
           description: Active scenario cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active_scenario:
+                    type: "null"
 
   /faults:
     get:
@@ -292,6 +759,36 @@ paths:
       responses:
         "200":
           description: Available and active fault data
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [available, active]
+                properties:
+                  available:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, description, default_rate]
+                      properties:
+                        name:
+                          type: string
+                          enum:
+                            - malformed_payload
+                            - missing_field
+                            - invalid_enum
+                            - out_of_order_timestamp
+                            - delayed_insert
+                            - duplicate_event_uid
+                            - synthetic_error
+                        description:
+                          type: string
+                        default_rate:
+                          type: number
+                  active:
+                    type: object
+                    additionalProperties:
+                      $ref: "#/components/schemas/FaultEntry"
 
   /faults/activate:
     post:
@@ -308,6 +805,16 @@ paths:
       responses:
         "200":
           description: Active faults updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [active_faults]
+                properties:
+                  active_faults:
+                    type: object
+                    additionalProperties:
+                      $ref: "#/components/schemas/FaultEntry"
         "400":
           description: Invalid fault payload
           content:
@@ -331,6 +838,14 @@ paths:
       responses:
         "200":
           description: Active faults updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [active_faults]
+                properties:
+                  active_faults:
+                    type: object
         "400":
           description: Invalid names payload
           content:
@@ -352,6 +867,18 @@ paths:
       responses:
         "200":
           description: Reset complete with runtime snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, runtime]
+                properties:
+                  status:
+                    type: string
+                    example: reset
+                  runtime:
+                    type: object
+                    description: Runtime snapshot after reset.
 
 tags:
   - name: public
