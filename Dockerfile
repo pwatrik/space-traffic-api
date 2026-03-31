@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY src ./src
 COPY run.py ./
+COPY docs ./docs
 
 RUN useradd --create-home --uid 10001 appuser \
 	&& mkdir -p /data \
