@@ -26,6 +26,21 @@ def test_healthz_and_public_endpoints():
             app.config["space_store"].close()
 
 
+def test_ui_dashboard_page_loads():
+    with TemporaryDirectory() as tmp:
+        os.environ["SPACE_TRAFFIC_DB_PATH"] = f"{tmp}/test.db"
+        os.environ["SPACE_TRAFFIC_DISABLE_GENERATOR"] = "true"
+        app = create_app()
+        client = app.test_client()
+        try:
+            response = client.get("/ui")
+            assert response.status_code == 200
+            content = response.get_data(as_text=True)
+            assert "Space Traffic Console" in content
+        finally:
+            app.config["space_store"].close()
+
+
 def test_stats_endpoint():
     with TemporaryDirectory() as tmp:
         os.environ["SPACE_TRAFFIC_DB_PATH"] = f"{tmp}/test.db"

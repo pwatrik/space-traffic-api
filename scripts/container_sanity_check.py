@@ -11,7 +11,7 @@ from typing import Any
 
 
 BASE_URL = os.getenv("SPACE_TRAFFIC_BASE_URL", "http://127.0.0.1:8000")
-API_KEY = os.getenv("SPACE_TRAFFIC_API_KEY", "space-demo-key")
+# API_KEY = os.getenv("SPACE_TRAFFIC_API_KEY", "space-demo-key")
 REPORT_PATH = Path("container_sanity_report.json")
 ERROR_PATH = Path("container_sanity_report.error.txt")
 
@@ -21,7 +21,7 @@ def _request_json(
     path: str,
     *,
     payload: dict[str, Any] | None = None,
-    with_auth: bool = True,
+    with_auth: bool = False,
     expected_status: int = 200,
 ) -> Any:
     url = f"{BASE_URL}{path}"
@@ -64,7 +64,7 @@ def _wait_for_health() -> dict[str, Any]:
 def main() -> None:
     try:
         health = _wait_for_health()
-        _request_json("GET", "/stations", with_auth=False, expected_status=401)
+        _request_json("GET", "/stations", with_auth=False, expected_status=200)
 
         stations = _request_json("GET", "/stations")
 

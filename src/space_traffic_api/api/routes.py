@@ -6,7 +6,7 @@ import queue
 import time
 from datetime import UTC, datetime
 
-from flask import Blueprint, Response, jsonify, request
+from flask import Blueprint, Response, jsonify, redirect, render_template, request
 
 from ..simulation import SimulationService, list_faults, list_scenarios
 from ..store import SQLiteStore
@@ -28,6 +28,14 @@ def create_api_blueprint(
         except FileNotFoundError:
             return Response("OpenAPI spec not found.", status=404, mimetype="text/plain")
         return Response(content, mimetype="application/yaml")
+
+    @bp.get("/")
+    def root_ui() -> Response:
+        return redirect("/ui", code=302)
+
+    @bp.get("/ui")
+    def dashboard_ui() -> str:
+        return render_template("dashboard.html")
 
     @bp.get("/healthz")
     def healthz() -> Response:

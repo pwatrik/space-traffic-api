@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Space Traffic Console</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/dashboard.css">
+  </head>
+  <body>
+    <div class="bg-orbit bg-orbit-a"></div>
+    <div class="bg-orbit bg-orbit-b"></div>
+
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Embedded Ops UI</p>
+        <h1>Space Traffic Console</h1>
+        <p class="subtitle">Live simulation visibility with zero extra services.</p>
+      </div>
+      <div class="hero-actions">
+        <a class="btn" href="/openapi.yaml">OpenAPI</a>
+        <a class="btn" href="/healthz">Health</a>
+      </div>
+    </header>
+
+    <main class="grid">
+      <section class="card stats" id="kpis">
+        <h2>Overview</h2>
+        <div class="kpi-grid">
+          <article><span>Ships</span><strong id="kpi-ships">-</strong></article>
+          <article><span>In Transit</span><strong id="kpi-in-transit">-</strong></article>
+          <article><span>Stations</span><strong id="kpi-stations">-</strong></article>
+          <article><span>Departures</span><strong id="kpi-departures">-</strong></article>
+          <article><span>Control Events</span><strong id="kpi-control-events">-</strong></article>
+          <article><span>Pirate Strength</span><strong id="kpi-pirates">-</strong></article>
+        </div>
+        <p class="meta" id="scenario-meta">Scenario: loading...</p>
+      </section>
+
+      <section class="card table-card">
+        <h2>Fleet State (Top 20)</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Ship</th>
+              <th>Faction</th>
+              <th>Status</th>
+              <th>Transit</th>
+              <th>From</th>
+              <th>To</th>
+            </tr>
+          </thead>
+          <tbody id="ship-state-body"></tbody>
+        </table>
+      </section>
+
+      <section class="card stream-card">
+        <h2>Live Departures</h2>
+        <pre id="departures-log" class="log"></pre>
+      </section>
+
+      <section class="card stream-card">
+        <h2>Control Events</h2>
+        <pre id="control-log" class="log"></pre>
+      </section>
+    </main>
+
+    <script src="/static/dashboard.js"></script>
+  </body>
+</html>
