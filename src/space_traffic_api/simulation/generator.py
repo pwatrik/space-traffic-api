@@ -44,7 +44,7 @@ def build_effective_lifecycle_config(
         if not isinstance(target, dict):
             continue
 
-        if "enabled" in conf:
+        if "enabled" in conf and clamped_intensity > 0:
             target["enabled"] = bool(conf["enabled"])
 
         if "base_probability_per_day_multiplier" in conf and "base_probability_per_day" in target:
@@ -77,7 +77,7 @@ def build_effective_lifecycle_config(
                         merged[key] = max(0.0, float(merged.get(key, 1.0)) * scale)
                     target["faction_loss_multiplier"] = merged
 
-        if channel == "build_queue":
+        if channel == "build_queue" and clamped_intensity > 0:
             raw = conf.get("faction_distribution")
             if isinstance(raw, dict) and raw:
                 normalized: dict[str, float] = {}
@@ -123,6 +123,7 @@ class DepartureGenerator(threading.Thread):
         self._last_event_uid = ""
         self._next_db_size_check_at = 0.0
         self._next_ship_sequence = self._store.max_ship_sequence() + 1
+        self._age_update_accumulator_days: float = 0.0
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -249,7 +250,17 @@ class DepartureGenerator(threading.Thread):
         effective_lifecycle = self.effective_lifecycle_config(scenario)
 
         elapsed_days = interval_seconds / 86400.0
-        self._store.increment_ship_age(elapsed_days)
+
+        flush_threshold_days = 1.0 / 24.0  # flush once per simulated hour
+        self._age_update_accumulator_days += elapsed_days
+        age_update_days = 0.0
+        if self._age_update_accumulator_days >= flush_threshold_days:
+            chunks = int(self._age_update_accumulator_days / flush_threshold_days)
+            age_update_days = chunks * flush_threshold_days
+            self._age_update_accumulator_days -= age_update_days
+
+        if age_update_days > 0.0:
+            self._store.increment_ship_age(age_update_days)
 
         active_ships = self._store.list_active_ships_for_lifecycle()
         if not active_ships:
@@ -303,7 +314,7 @@ class DepartureGenerator(threading.Thread):
             age_days = float(ship.get("ship_age_days") or 0.0)
             years_over = max(0.0, (age_days - soft_limit_days) / 365.0)
             per_day = min(max_probability_per_day, base + (years_over * accel))
-            per_tick = max(0.0, per_day * elapsed_days)
+            per_tick = min(1.0, max(0.0, per_day * elapsed_days))
             if self._rng.random() >= per_tick:
                 continue
 
@@ -407,6 +418,8 @@ class DepartureGenerator(threading.Thread):
         if not faction_weights:
             return
 
+        spawn_policy = str(conf.get("spawn_policy", "compatible_random_station")).strip().lower()
+
         ship_types = self._ship_generation.get("ship_types") or []
         cargo_types = self._ship_generation.get("cargo_types") or []
         naming = self._ship_generation.get("naming") or {}
@@ -428,7 +441,7 @@ class DepartureGenerator(threading.Thread):
             candidates = ship_types_by_faction.get(faction) or ship_types
             choice = self._rng.choice(candidates)
             size_class = str(choice.get("size_class") or "medium").strip().lower()
-            home_station_id = self._pick_compatible_station(size_class)
+            home_station_id = self._pick_station_by_policy(spawn_policy, size_class)
             if not home_station_id:
                 continue
 
@@ -470,6 +483,16 @@ class DepartureGenerator(threading.Thread):
             if threshold <= running:
                 return key
         return next(iter(weights))
+
+    def _pick_station_by_policy(self, policy: str, size_class: str) -> str | None:
+        """Return a home station ID for a newly built ship using the given spawn policy."""
+        if policy == "any_random_station":
+            station_ids = list(self._station_lookup.keys())
+            if not station_ids:
+                return None
+            return self._rng.choice(station_ids)
+        # Default / "compatible_random_station": restrict to stations that accept the size class.
+        return self._pick_compatible_station(size_class)
 
     def _pick_compatible_station(self, size_class: str) -> str | None:
         station_ids = [sid for sid in self._station_lookup if self._station_accepts_size_class(sid, size_class)]
