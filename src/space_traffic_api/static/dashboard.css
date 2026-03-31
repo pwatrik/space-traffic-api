@@ -261,7 +261,7 @@ canvas {
 
 .control-summary-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   margin-top: 12px;
 }
@@ -281,6 +281,49 @@ canvas {
 
 .summary-empty {
   color: var(--muted);
+}
+
+.summary-history {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.action-history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.action-history li {
+  border: 1px solid rgba(140, 179, 207, 0.2);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(7, 21, 32, 0.8);
+}
+
+.action-history strong {
+  color: var(--text);
+  display: block;
+  font-size: 0.82rem;
+}
+
+.action-history span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.76rem;
+  margin-top: 2px;
+}
+
+.action-history .success {
+  color: var(--accent-2);
+}
+
+.action-history .error {
+  color: var(--danger);
 }
 
 .pill-row {
@@ -303,6 +346,14 @@ canvas {
 
 .mini-pill strong {
   color: var(--accent);
+}
+
+.stream-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
 }
 
 .inline-row {
@@ -467,6 +518,10 @@ th {
 
 .toast.info strong {
   color: var(--accent);
+}
+
+.toast.warn strong {
+  color: #ffe2a5;
 }
 
 @keyframes toast-in {

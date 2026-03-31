@@ -13,6 +13,15 @@ function fmtShortJson(obj) {
   }
 }
 
+function fmtTime(value) {
+  const date = value instanceof Date ? value : new Date(value || Date.now());
+  return new Intl.DateTimeFormat([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+  }).format(date);
+}
+
 function appendLog(el, line, maxLines = 160) {
   const current = el.textContent ? el.textContent.split("\n") : [];
   current.push(line);
@@ -37,7 +46,16 @@ function setControlStatus(state, detail) {
   const detailEl = document.getElementById("control-status-detail");
   statusEl.className = `status-indicator ${state}`;
   statusEl.textContent = state;
-  detailEl.textContent = detail;
+  detailEl.textContent = `${detail} at ${fmtTime()}`;
+}
+
+function setStreamStatus(elementId, state, detail) {
+  const el = document.getElementById(elementId);
+  if (!el) {
+    return;
+  }
+  el.className = `status-indicator ${state}`;
+  el.textContent = detail;
 }
 
 function showToast(kind, title, message, ttlMs = 4200) {
@@ -101,6 +119,34 @@ const stationsQuery = {
 
 const departuresByMinute = new Map();
 const pirateStrengthHistory = [];
+const operatorActionHistory = [];
+
+function recordOperatorAction(title, detail, status = "success") {
+  const timestamp = new Date();
+  operatorActionHistory.unshift({ title, detail, status, timestamp });
+  if (operatorActionHistory.length > 8) {
+    operatorActionHistory.splice(8);
+  }
+
+  const lastActionEl = document.getElementById("operator-last-action");
+  const historyEl = document.getElementById("operator-action-history");
+  if (!lastActionEl || !historyEl) {
+    return;
+  }
+
+  lastActionEl.textContent = `${title} at ${fmtTime(timestamp)}`;
+  historyEl.innerHTML = operatorActionHistory
+    .map(
+      (entry) => `
+        <li>
+          <strong>${escapeHtml(entry.title)}</strong>
+          <span class="${escapeHtml(entry.status)}">${escapeHtml(entry.detail)}</span>
+          <span>${escapeHtml(fmtTime(entry.timestamp))}</span>
+        </li>
+      `
+    )
+    .join("");
+}
 
 function nowMinuteKey(date = new Date()) {
   const d = new Date(date);
@@ -185,6 +231,7 @@ function drawCharts() {
 function renderControlSummary(config, faults) {
   const scenarioEl = document.getElementById("active-scenario-summary");
   const faultsEl = document.getElementById("active-faults-summary");
+  const activeFaultSelect = document.getElementById("fault-active-name");
 
   const activeScenario = config.active_scenario;
   if (activeScenario) {
@@ -201,6 +248,13 @@ function renderControlSummary(config, faults) {
 
   const activeFaults = faults.active || {};
   const entries = Object.entries(activeFaults);
+  if (activeFaultSelect) {
+    activeFaultSelect.innerHTML = entries.length
+      ? entries
+          .map(([name]) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
+          .join("")
+      : '<option value="">none active</option>';
+  }
   if (!entries.length) {
     faultsEl.innerHTML = '<span class="summary-empty">No active faults.</span>';
     return;
@@ -363,6 +417,7 @@ function bindControls() {
   const scenarioActivateButton = document.getElementById("scenario-activate");
   const scenarioDeactivateButton = document.getElementById("scenario-deactivate");
   const faultActivateButton = document.getElementById("fault-activate");
+  const faultDeactivateButton = document.getElementById("fault-deactivate");
   const faultClearButton = document.getElementById("fault-clear");
 
   cfgSaveButton.addEventListener("click", async () => {
@@ -384,10 +439,12 @@ function bindControls() {
         await loadControlData();
         setControlStatus("success", "Runtime configuration updated.");
         appendLog(ctrlLog, "[control] config patched");
+        recordOperatorAction("Config updated", "Deterministic mode and seed saved.");
         showToast("success", "Config Applied", "Runtime configuration updated.");
       } catch (err) {
         setControlStatus("error", `Config update failed: ${err}`);
         appendLog(ctrlLog, `[control-error] ${err}`);
+        recordOperatorAction("Config update failed", String(err), "error");
         showToast("error", "Config Failed", String(err));
       }
     });
@@ -415,10 +472,12 @@ function bindControls() {
         await Promise.all([refreshSnapshots(), refreshShips(), refreshStations(), loadControlData()]);
         setControlStatus("success", "Simulation reset applied.");
         appendLog(ctrlLog, "[control] reset applied");
+        recordOperatorAction("Simulation reset", "State and departures cleared.");
         showToast("success", "Simulation Reset", "State and departure history were reset.");
       } catch (err) {
         setControlStatus("error", `Reset failed: ${err}`);
         appendLog(ctrlLog, `[control-error] ${err}`);
+        recordOperatorAction("Reset failed", String(err), "error");
         showToast("error", "Reset Failed", String(err));
       }
     });
@@ -441,10 +500,12 @@ function bindControls() {
         await Promise.all([refreshSnapshots(), loadControlData()]);
         setControlStatus("success", `Scenario ${payload.name} is active.`);
         appendLog(ctrlLog, `[control] scenario activated: ${payload.name}`);
+        recordOperatorAction("Scenario activated", `${payload.name} intensity ${payload.intensity}.`);
         showToast("success", "Scenario Activated", `${payload.name} is now active.`);
       } catch (err) {
         setControlStatus("error", `Scenario activation failed: ${err}`);
         appendLog(ctrlLog, `[control-error] ${err}`);
+        recordOperatorAction("Scenario activation failed", String(err), "error");
         showToast("error", "Scenario Failed", String(err));
       }
     });
@@ -462,10 +523,12 @@ function bindControls() {
         await Promise.all([refreshSnapshots(), loadControlData()]);
         setControlStatus("success", "Scenario deactivated.");
         appendLog(ctrlLog, "[control] scenario deactivated");
+        recordOperatorAction("Scenario deactivated", "Active scenario cleared.");
         showToast("success", "Scenario Cleared", "The active scenario was deactivated.");
       } catch (err) {
         setControlStatus("error", `Scenario deactivation failed: ${err}`);
         appendLog(ctrlLog, `[control-error] ${err}`);
+        recordOperatorAction("Scenario deactivation failed", String(err), "error");
         showToast("error", "Scenario Clear Failed", String(err));
       }
     });
@@ -487,11 +550,45 @@ function bindControls() {
         await loadControlData();
         setControlStatus("success", `Fault ${name} activated.`);
         appendLog(ctrlLog, `[control] fault activated: ${name}`);
+        recordOperatorAction("Fault activated", `${name} rate ${rate}.`);
         showToast("success", "Fault Activated", `${name} is now affecting live events.`);
       } catch (err) {
         setControlStatus("error", `Fault activation failed: ${err}`);
         appendLog(ctrlLog, `[control-error] ${err}`);
+        recordOperatorAction("Fault activation failed", String(err), "error");
         showToast("error", "Fault Failed", String(err));
+      }
+    });
+  });
+
+  faultDeactivateButton.addEventListener("click", async () => {
+    const name = document.getElementById("fault-active-name").value;
+    if (!name) {
+      showToast("warn", "No Fault Selected", "Choose an active fault to clear.");
+      return;
+    }
+    if (!window.confirm(`Deactivate fault ${name}?`)) {
+      return;
+    }
+
+    await withButtonBusy(faultDeactivateButton, "Clearing...", async () => {
+      try {
+        setControlStatus("pending", `Clearing fault ${name}...`);
+        await requestJson("/faults/deactivate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ names: [name] })
+        });
+        await loadControlData();
+        setControlStatus("success", `Fault ${name} cleared.`);
+        appendLog(ctrlLog, `[control] fault cleared: ${name}`);
+        recordOperatorAction("Fault cleared", `${name} deactivated.`);
+        showToast("success", "Fault Cleared", `${name} was deactivated.`);
+      } catch (err) {
+        setControlStatus("error", `Fault clear failed: ${err}`);
+        appendLog(ctrlLog, `[control-error] ${err}`);
+        recordOperatorAction("Fault clear failed", String(err), "error");
+        showToast("error", "Fault Clear Failed", String(err));
       }
     });
   });
@@ -512,10 +609,12 @@ function bindControls() {
         await loadControlData();
         setControlStatus("success", "All active faults cleared.");
         appendLog(ctrlLog, "[control] all faults cleared");
+        recordOperatorAction("All faults cleared", "Every active fault was removed.");
         showToast("success", "Faults Cleared", "All active faults were cleared.");
       } catch (err) {
         setControlStatus("error", `Fault clear failed: ${err}`);
         appendLog(ctrlLog, `[control-error] ${err}`);
+        recordOperatorAction("Clear all faults failed", String(err), "error");
         showToast("error", "Fault Clear Failed", String(err));
       }
     });
@@ -594,7 +693,9 @@ function initStreams() {
   const depLog = document.getElementById("departures-log");
   const ctrlLog = document.getElementById("control-log");
 
+  setStreamStatus("departures-stream-status", "pending", "connecting");
   const depEs = new EventSource("/departures/stream");
+  depEs.onopen = () => setStreamStatus("departures-stream-status", "success", "live");
   depEs.addEventListener("departure", (event) => {
     try {
       const payload = JSON.parse(event.data);
@@ -606,9 +707,14 @@ function initStreams() {
       appendLog(depLog, event.data);
     }
   });
-  depEs.onerror = () => appendLog(depLog, "[stream] departure connection interrupted");
+  depEs.onerror = () => {
+    setStreamStatus("departures-stream-status", "error", "reconnecting");
+    appendLog(depLog, "[stream] departure connection interrupted");
+  };
 
+  setStreamStatus("control-stream-status", "pending", "connecting");
   const ctrlEs = new EventSource("/control-events/stream");
+  ctrlEs.onopen = () => setStreamStatus("control-stream-status", "success", "live");
   ctrlEs.addEventListener("control_event", (event) => {
     try {
       const payload = JSON.parse(event.data);
@@ -618,7 +724,10 @@ function initStreams() {
       appendLog(ctrlLog, event.data);
     }
   });
-  ctrlEs.onerror = () => appendLog(ctrlLog, "[stream] control connection interrupted");
+  ctrlEs.onerror = () => {
+    setStreamStatus("control-stream-status", "error", "reconnecting");
+    appendLog(ctrlLog, "[stream] control connection interrupted");
+  };
 }
 
 async function init() {
@@ -642,6 +751,7 @@ async function init() {
   }
 
   initStreams();
+  recordOperatorAction("Console ready", "Dashboard connected to live snapshots.", "success");
   setControlStatus("idle", "Live streams connected. Console ready.");
   setInterval(async () => {
     try {

@@ -88,9 +88,15 @@
               <label>Name
                 <select id="fault-name"></select>
               </label>
+              <label>Active
+                <select id="fault-active-name">
+                  <option value="">none active</option>
+                </select>
+              </label>
               <label>Rate <input id="fault-rate" type="number" min="0" max="1" step="0.01" value="0.2"></label>
               <label>Duration(s) <input id="fault-duration" type="number" min="0" value="120"></label>
               <button class="btn" id="fault-activate">Activate</button>
+              <button class="btn" id="fault-deactivate">Clear Selected</button>
               <button class="btn" id="fault-clear">Clear All</button>
             </div>
           </div>
@@ -104,6 +110,13 @@
           <article class="summary-block">
             <h3>Active Faults</h3>
             <div id="active-faults-summary" class="summary-content">Loading...</div>
+          </article>
+          <article class="summary-block">
+            <h3>Operator Activity</h3>
+            <div class="summary-content summary-history">
+              <p class="summary-empty" id="operator-last-action">No control actions yet.</p>
+              <ul id="operator-action-history" class="action-history"></ul>
+            </div>
           </article>
         </div>
       </section>
@@ -126,12 +139,18 @@
       </section>
 
       <section class="card stream-card">
-        <h2>Live Departures</h2>
+        <div class="stream-header">
+          <h2>Live Departures</h2>
+          <span class="status-indicator idle" id="departures-stream-status">connecting</span>
+        </div>
         <pre id="departures-log" class="log"></pre>
       </section>
 
       <section class="card stream-card">
-        <h2>Control Events</h2>
+        <div class="stream-header">
+          <h2>Control Events</h2>
+          <span class="status-indicator idle" id="control-stream-status">connecting</span>
+        </div>
         <pre id="control-log" class="log"></pre>
       </section>
 
