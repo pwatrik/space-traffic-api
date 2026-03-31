@@ -203,12 +203,17 @@ def load_seed_catalog(catalog_path: str | None = None) -> dict[str, Any]:
     defaults = ship_generation.get("defaults")
     if not isinstance(defaults, dict):
         raise ValueError("ship_generation.defaults must be an object")
-    ship_count = defaults.get("ship_count", 220)
+    ship_count = defaults.get("ship_count", 500)
     ship_seed = defaults.get("ship_seed", 9001)
+    ship_speed_multiplier = defaults.get("ship_speed_multiplier", 84.0)
     if not isinstance(ship_count, int) or ship_count < 1:
         raise ValueError("ship_generation.defaults.ship_count must be a positive integer")
     if not isinstance(ship_seed, int):
         raise ValueError("ship_generation.defaults.ship_seed must be an integer")
+    ship_speed_multiplier = _ensure_positive_number(
+        "ship_generation.defaults.ship_speed_multiplier",
+        ship_speed_multiplier,
+    )
 
     lifecycle_raw = raw.get("lifecycle", {})
     if lifecycle_raw is None:
@@ -395,6 +400,7 @@ def load_seed_catalog(catalog_path: str | None = None) -> dict[str, Any]:
             "defaults": {
                 "ship_count": ship_count,
                 "ship_seed": ship_seed,
+                "ship_speed_multiplier": ship_speed_multiplier,
             },
         },
         "lifecycle": {

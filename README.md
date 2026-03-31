@@ -6,7 +6,7 @@ Fake event API for data engineering ingestion demos. It simulates ship departure
 
 - Static domain data:
   - Stations: one per major planet, major moon, and major asteroid.
-  - Ships: 220 registry entries across merchant, government, military, and bounty_hunter factions.
+  - Ships: 500 registry entries across merchant, government, military, and bounty_hunter factions.
 - Departure generation:
   - Baseline throughput: 10-20 events/minute.
   - Background generator starts at app initialization.

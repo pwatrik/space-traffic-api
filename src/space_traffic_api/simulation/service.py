@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import queue
+from datetime import datetime
 from typing import Any
 
 from ..config import AppConfig
@@ -44,6 +45,7 @@ class SimulationService:
     def snapshot(self) -> dict[str, Any]:
         state = self._runtime.snapshot()
         state["effective_lifecycle"] = self._generator.effective_lifecycle_config(state.get("active_scenario"))
+        state["effective_ship_generation"] = self._generator.effective_ship_generation_config()
         return state
 
     def patch_config(self, patch: dict[str, Any]) -> dict[str, Any]:
@@ -63,6 +65,9 @@ class SimulationService:
 
     def reset(self, seed: int | None = None) -> dict[str, Any]:
         return self._runtime.reset(seed=seed)
+
+    def estimate_arrival(self, departure_time: datetime, source: str, destination: str) -> datetime:
+        return self._generator.estimate_arrival(departure_time, source, destination)
 
     def list_control_events(self, since_id: int | None, limit: int, order: str) -> list[dict[str, Any]]:
         return self._runtime.list_control_events(since_id=since_id, limit=limit, order=order)
