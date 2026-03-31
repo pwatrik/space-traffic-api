@@ -672,11 +672,12 @@ class DepartureGenerator(threading.Thread):
         ship_types = self._ship_generation.get("ship_types") or []
         cargo_types = self._ship_generation.get("cargo_types") or []
         naming = self._ship_generation.get("naming") or {}
-        adjectives = self._naming.get("adjectives") or naming.get("adjectives") or ["Solar"]
-        nouns = self._naming.get("nouns") or naming.get("nouns") or ["Pioneer"]
-        captain_first = self._naming.get("captain_first") or naming.get("captain_first") or ["Alex"]
-        captain_last = self._naming.get("captain_last") or naming.get("captain_last") or ["Voss"]
-        ship_names_singular = list(self._naming.get("ship_names_singular") or [])
+        adjectives = naming.get("adjectives") or self._naming.get("adjectives") or ["Solar"]
+        nouns = naming.get("nouns") or self._naming.get("nouns") or ["Pioneer"]
+        captain_first = naming.get("captain_first") or self._naming.get("captain_first") or ["Alex"]
+        captain_last = naming.get("captain_last") or self._naming.get("captain_last") or ["Voss"]
+        ship_names_singular_raw = self._naming.get("ship_names_singular")
+        ship_names_singular = list(ship_names_singular_raw) if isinstance(ship_names_singular_raw, list) else []
 
         if not ship_types or not cargo_types:
             return

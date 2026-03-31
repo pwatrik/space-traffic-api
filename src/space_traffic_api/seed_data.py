@@ -20,8 +20,10 @@ def load_naming_config(naming_path: str | None = None) -> dict[str, Any]:
         return {}
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Failed to parse JSON in naming config at {path}") from exc
+    except OSError as exc:
+        raise ValueError(f"Failed to read naming config at {path}") from exc
 
 
 def _ensure_str_list(path: str, value: Any, *, min_items: int = 1) -> list[str]:
@@ -442,7 +444,11 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
     stations: list[dict[str, Any]] = []
 
     naming_ext = load_naming_config()
-    base_names = list(naming_ext.get("base_names_singular") or [])
+    raw_base_names = naming_ext.get("base_names_singular")
+    if raw_base_names is not None:
+        base_names = _ensure_str_list("naming.base_names_singular", raw_base_names, min_items=0)
+    else:
+        base_names = []
     if base_names:
         ship_seed = int(((catalog.get("ship_generation") or {}).get("defaults") or {}).get("ship_seed", 9001))
         random.Random(ship_seed).shuffle(base_names)
@@ -541,11 +547,15 @@ def build_ships(
     }
     naming = ship_generation["naming"]
     naming_ext = load_naming_config()
-    adjectives = naming_ext.get("adjectives") or naming["adjectives"]
-    nouns = naming_ext.get("nouns") or naming["nouns"]
-    captain_first = naming_ext.get("captain_first") or naming["captain_first"]
-    captain_last = naming_ext.get("captain_last") or naming["captain_last"]
-    ship_names_singular = list(naming_ext.get("ship_names_singular") or [])
+    adjectives = naming["adjectives"]
+    nouns = naming["nouns"]
+    captain_first = naming["captain_first"]
+    captain_last = naming["captain_last"]
+    ship_names_singular_raw = naming_ext.get("ship_names_singular")
+    if ship_names_singular_raw is not None:
+        ship_names_singular = _ensure_str_list("naming.ship_names_singular", ship_names_singular_raw, min_items=0)
+    else:
+        ship_names_singular = []
 
     for i in range(1, count + 1):
         faction = _pick_faction(rng, ship_generation["faction_distribution"])
