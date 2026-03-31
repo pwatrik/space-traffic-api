@@ -21,6 +21,7 @@ def _as_int(value: str | None, default: int) -> int:
 class AppConfig:
     api_key: str
     db_path: str
+    seed_catalog_path: str | None
     base_min_events_per_minute: int
     base_max_events_per_minute: int
     deterministic_mode: bool
@@ -35,6 +36,7 @@ class AppConfig:
         return AppConfig(
             api_key=os.getenv("SPACE_TRAFFIC_API_KEY", "space-demo-key"),
             db_path=os.getenv("SPACE_TRAFFIC_DB_PATH", "space_traffic.db"),
+            seed_catalog_path=os.getenv("SPACE_TRAFFIC_SEED_CATALOG_PATH"),
             base_min_events_per_minute=_as_int(os.getenv("SPACE_TRAFFIC_MIN_EVENTS_PER_MIN"), 10),
             base_max_events_per_minute=_as_int(os.getenv("SPACE_TRAFFIC_MAX_EVENTS_PER_MIN"), 20),
             deterministic_mode=_as_bool(os.getenv("SPACE_TRAFFIC_DETERMINISTIC_MODE"), False),

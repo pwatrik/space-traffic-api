@@ -63,13 +63,18 @@ class DepartureGenerator(threading.Thread):
             effective_min, effective_max = self._effective_rate_bounds(state, scenario)
             rate = self._rng.randint(effective_min, effective_max)
             interval_seconds = max(0.2, 60.0 / float(rate))
+            tick_time = self._current_tick_time(state)
+
+            self._store.complete_ship_arrivals(tick_time.isoformat())
 
             if self._is_globally_interrupted(scenario):
+                self._advance_sim_time(state, tick_time, interval_seconds)
                 time.sleep(min(1.0, interval_seconds))
                 continue
 
-            event = self._build_event(state, scenario)
+            event = self._build_event(state, scenario, tick_time)
             if event is None:
+                self._advance_sim_time(state, tick_time, interval_seconds)
                 time.sleep(min(1.0, interval_seconds))
                 continue
 
@@ -90,9 +95,7 @@ class DepartureGenerator(threading.Thread):
 
             self._publish_event(event)
 
-            if state.get("deterministic_mode"):
-                departure = datetime.fromisoformat(event["departure_time"]) + timedelta(seconds=interval_seconds)
-                self._sim_time = departure
+            self._advance_sim_time(state, tick_time, interval_seconds)
 
             time.sleep(interval_seconds)
 
@@ -150,12 +153,13 @@ class DepartureGenerator(threading.Thread):
         self,
         state: dict[str, Any],
         scenario: dict[str, Any] | None,
+        tick_time: datetime,
     ) -> dict[str, Any] | None:
         ship = self._pick_ship(scenario)
         if not ship:
             return None
 
-        src = ship["home_station_id"]
+        src = ship["current_station_id"]
         dst = self._pick_destination(src, scenario)
         if not dst:
             return None
@@ -163,8 +167,18 @@ class DepartureGenerator(threading.Thread):
         if self._is_scoped_interrupt(scenario, ship, src, dst):
             return None
 
-        departure_time = self._next_departure_time(state)
+        departure_time = tick_time
         eta = self._estimate_arrival(departure_time, src, dst)
+
+        departed = self._store.begin_ship_transit(
+            ship_id=ship["ship_id"],
+            source_station_id=src,
+            destination_station_id=dst,
+            departure_time=departure_time.isoformat(),
+            est_arrival_time=eta.isoformat(),
+        )
+        if not departed:
+            return None
 
         self._event_counter += 1
         event_uid = f"EVT-{self._event_counter:09d}-{self._rng.getrandbits(32):08x}"
@@ -173,7 +187,7 @@ class DepartureGenerator(threading.Thread):
         payload = {
             "event_uid": event_uid,
             "departure_time": departure_time.isoformat(),
-            "ship_id": ship["id"],
+            "ship_id": ship["ship_id"],
             "source_station_id": src,
             "destination_station_id": dst,
             "est_arrival_time": eta.isoformat(),
@@ -188,19 +202,23 @@ class DepartureGenerator(threading.Thread):
         }
 
     def _pick_ship(self, scenario: dict[str, Any] | None) -> dict[str, Any] | None:
-        if not self._ships:
+        candidates = self._store.list_available_ships()
+        if not candidates:
             return None
         if not scenario:
-            return self._rng.choice(self._ships)
+            return self._rng.choice(candidates)
 
         definition = SCENARIO_DEFINITIONS.get(scenario["name"], {})
         weights = definition.get("faction_weights")
         if not weights:
-            return self._rng.choice(self._ships)
+            return self._rng.choice(candidates)
 
-        candidates = [s for s in self._ships if s["faction"] in weights]
+        candidates = [s for s in candidates if s["faction"] in weights]
         if not candidates:
-            return self._rng.choice(self._ships)
+            fallback = self._store.list_available_ships()
+            if not fallback:
+                return None
+            return self._rng.choice(fallback)
 
         cumulative: list[float] = []
         running = 0.0
@@ -254,12 +272,16 @@ class DepartureGenerator(threading.Thread):
             return ship["ship_type"] in ship_types
         return False
 
-    def _next_departure_time(self, state: dict[str, Any]) -> datetime:
+    def _current_tick_time(self, state: dict[str, Any]) -> datetime:
         if state.get("deterministic_mode"):
             if self._sim_time is None:
                 self._set_sim_time(state)
             return self._sim_time
         return datetime.now(UTC)
+
+    def _advance_sim_time(self, state: dict[str, Any], tick_time: datetime, interval_seconds: float) -> None:
+        if state.get("deterministic_mode"):
+            self._sim_time = tick_time + timedelta(seconds=interval_seconds)
 
     def _estimate_arrival(self, departure_time: datetime, source: str, destination: str) -> datetime:
         src_group = self._distance_groups.get(source, 5)
