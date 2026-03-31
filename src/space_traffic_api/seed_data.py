@@ -22,6 +22,11 @@ def _sanitize_station_token(raw: str) -> str:
     return re.sub(r"[^A-Z0-9_]+", "_", raw.upper()).strip("_")
 
 
+def _normalize_size_classes(path: str, value: Any) -> list[str]:
+    classes = _ensure_str_list(path, value, min_items=1)
+    return [item.strip().lower() for item in classes]
+
+
 def load_seed_catalog(catalog_path: str | None = None) -> dict[str, Any]:
     path = Path(catalog_path) if catalog_path else _default_catalog_path()
     if not path.exists():
@@ -75,7 +80,7 @@ def load_seed_catalog(catalog_path: str | None = None) -> dict[str, Any]:
     templates_raw = stations.get("templates")
     if not isinstance(templates_raw, list) or not templates_raw:
         raise ValueError("stations.templates must be a non-empty array")
-    station_templates: dict[str, dict[str, str]] = {}
+    station_templates: dict[str, dict[str, Any]] = {}
     for idx, template in enumerate(templates_raw):
         if not isinstance(template, dict):
             raise ValueError(f"stations.templates[{idx}] must be an object")
@@ -88,10 +93,14 @@ def load_seed_catalog(catalog_path: str | None = None) -> dict[str, Any]:
             raise ValueError(f"stations.templates[{idx}].id_prefix must be a non-empty string")
         if not isinstance(name_template, str) or "{body}" not in name_template:
             raise ValueError(f"stations.templates[{idx}].name_template must include {{body}}")
+        raw_size_classes = template.get("allowed_size_classes", ["small", "medium", "large", "xlarge"])
         station_templates[body_type] = {
             "id_prefix": id_prefix,
             "name_template": name_template,
             "parent_body": str(template.get("parent_body", "")),
+            "allowed_size_classes": _normalize_size_classes(
+                f"stations.templates[{idx}].allowed_size_classes", raw_size_classes
+            ),
         }
 
     faction_distribution = ship_generation.get("faction_distribution")
@@ -114,11 +123,16 @@ def load_seed_catalog(catalog_path: str | None = None) -> dict[str, Any]:
             raise ValueError(f"ship_generation.ship_types[{idx}] must be an object")
         name = row.get("name")
         faction = row.get("faction")
+        size_class = row.get("size_class")
         if not isinstance(name, str) or not name:
             raise ValueError(f"ship_generation.ship_types[{idx}].name must be a non-empty string")
         if not isinstance(faction, str) or not faction:
             raise ValueError(f"ship_generation.ship_types[{idx}].faction must be a non-empty string")
-        ship_types.append(dict(row))
+        if not isinstance(size_class, str) or not size_class.strip():
+            raise ValueError(f"ship_generation.ship_types[{idx}].size_class must be a non-empty string")
+        normalized = dict(row)
+        normalized["size_class"] = size_class.strip().lower()
+        ship_types.append(normalized)
 
     naming = ship_generation.get("naming")
     if not isinstance(naming, dict):
@@ -177,6 +191,7 @@ def build_stations(catalog_path: str | None = None) -> list[dict[str, Any]]:
                 "body_name": planet,
                 "body_type": "planet",
                 "parent_body": planet,
+                "allowed_size_classes": template["allowed_size_classes"],
             }
         )
 
@@ -192,6 +207,7 @@ def build_stations(catalog_path: str | None = None) -> list[dict[str, Any]]:
                 "body_name": moon_name,
                 "body_type": "moon",
                 "parent_body": parent,
+                "allowed_size_classes": template["allowed_size_classes"],
             }
         )
 
@@ -205,6 +221,7 @@ def build_stations(catalog_path: str | None = None) -> list[dict[str, Any]]:
                 "body_name": asteroid,
                 "body_type": "asteroid",
                 "parent_body": template["parent_body"] or "Asteroid Belt",
+                "allowed_size_classes": template["allowed_size_classes"],
             }
         )
 
@@ -231,9 +248,9 @@ def build_ships(
     catalog = load_seed_catalog(catalog_path)
     ship_generation = catalog["ship_generation"]
     defaults = ship_generation["defaults"]
-    ship_types_by_faction: dict[str, list[str]] = {}
+    ship_types_by_faction: dict[str, list[dict[str, Any]]] = {}
     for row in ship_generation["ship_types"]:
-        ship_types_by_faction.setdefault(row["faction"], []).append(row["name"])
+        ship_types_by_faction.setdefault(row["faction"], []).append(row)
 
     if count is None:
         count = int(defaults["ship_count"])
@@ -243,14 +260,27 @@ def build_ships(
     rng = random.Random(seed)
     ships: list[dict[str, Any]] = []
     station_ids = [row["id"] for row in stations]
+    station_capabilities = {
+        row["id"]: {str(item).strip().lower() for item in row.get("allowed_size_classes", [])}
+        for row in stations
+    }
     naming = ship_generation["naming"]
 
     for i in range(1, count + 1):
         faction = _pick_faction(rng, ship_generation["faction_distribution"])
         ship_type_options = ship_types_by_faction.get(faction)
         if not ship_type_options:
-            ship_type_options = [row["name"] for row in ship_generation["ship_types"]]
-        ship_type = rng.choice(ship_type_options)
+            ship_type_options = list(ship_generation["ship_types"])
+        ship_type_choice = rng.choice(ship_type_options)
+        ship_type = ship_type_choice["name"]
+        size_class = ship_type_choice["size_class"]
+
+        compatible_station_ids = [
+            station_id
+            for station_id in station_ids
+            if not station_capabilities.get(station_id) or size_class in station_capabilities[station_id]
+        ]
+        home_station_id = rng.choice(compatible_station_ids or station_ids)
 
         ship_name = f"{rng.choice(naming['adjectives'])} {rng.choice(naming['nouns'])}"
         captain = f"{rng.choice(naming['captain_first'])} {rng.choice(naming['captain_last'])}"
@@ -262,8 +292,9 @@ def build_ships(
                 "name": ship_name,
                 "faction": faction,
                 "ship_type": ship_type,
+                "size_class": size_class,
                 "displacement_million_m3": round(rng.uniform(0.8, 22.0), 3),
-                "home_station_id": rng.choice(station_ids),
+                "home_station_id": home_station_id,
                 "captain_name": captain,
                 "cargo": cargo,
             }

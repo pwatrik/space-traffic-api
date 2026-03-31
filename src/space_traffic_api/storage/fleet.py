@@ -100,7 +100,8 @@ class FleetRepository:
                 ss.ship_id,
                 ss.current_station_id,
                 s.faction,
-                s.ship_type
+                s.ship_type,
+                s.size_class
             FROM ship_state ss
             JOIN ships s ON s.id = ss.ship_id
             WHERE ss.status = 'active' AND ss.in_transit = 0 AND ss.current_station_id IS NOT NULL

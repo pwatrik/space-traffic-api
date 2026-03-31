@@ -160,7 +160,7 @@ class DepartureGenerator(threading.Thread):
             return None
 
         src = ship["current_station_id"]
-        dst = self._pick_destination(src, scenario)
+        dst = self._pick_destination(ship, src, scenario)
         if not dst:
             return None
 
@@ -232,10 +232,19 @@ class DepartureGenerator(threading.Thread):
                 return candidates[idx]
         return candidates[-1]
 
-    def _pick_destination(self, source_station_id: str, scenario: dict[str, Any] | None) -> str | None:
+    def _pick_destination(
+        self,
+        ship: dict[str, Any],
+        source_station_id: str,
+        scenario: dict[str, Any] | None,
+    ) -> str | None:
+        ship_size_class = str(ship.get("size_class") or "medium").strip().lower()
+
         station_ids = list(self._station_lookup.keys())
         if source_station_id in station_ids:
             station_ids.remove(source_station_id)
+
+        station_ids = [sid for sid in station_ids if self._station_accepts_size_class(sid, ship_size_class)]
         if not station_ids:
             return None
 
@@ -246,6 +255,18 @@ class DepartureGenerator(threading.Thread):
                 return self._rng.choice(preferred)
 
         return self._rng.choice(station_ids)
+
+    def _station_accepts_size_class(self, station_id: str, ship_size_class: str) -> bool:
+        station = self._station_lookup.get(station_id)
+        if not station:
+            return False
+
+        allowed = station.get("allowed_size_classes")
+        if not isinstance(allowed, list) or not allowed:
+            return True
+
+        allowed_classes = {str(item).strip().lower() for item in allowed if str(item).strip()}
+        return ship_size_class in allowed_classes
 
     def _is_scoped_interrupt(
         self,

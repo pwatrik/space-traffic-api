@@ -28,19 +28,30 @@ def test_custom_seed_catalog_defaults_are_applied():
         },
         "stations": {
             "templates": [
-                {"body_type": "planet", "id_prefix": "STN-PLANET", "name_template": "{body} Prime Port"},
-                {"body_type": "moon", "id_prefix": "STN-MOON", "name_template": "{body} Orbital"},
+                {
+                    "body_type": "planet",
+                    "id_prefix": "STN-PLANET",
+                    "name_template": "{body} Prime Port",
+                    "allowed_size_classes": ["small", "medium"],
+                },
+                {
+                    "body_type": "moon",
+                    "id_prefix": "STN-MOON",
+                    "name_template": "{body} Orbital",
+                    "allowed_size_classes": ["small", "medium", "large", "xlarge"],
+                },
                 {
                     "body_type": "asteroid",
                     "id_prefix": "STN-AST",
                     "name_template": "{body} Hub",
                     "parent_body": "Asteroid Belt",
+                    "allowed_size_classes": ["small", "medium"],
                 },
             ]
         },
         "ship_generation": {
             "faction_distribution": {"merchant": 1.0},
-            "ship_types": [{"name": "Freighter", "faction": "merchant"}],
+            "ship_types": [{"name": "Freighter", "faction": "merchant", "size_class": "large"}],
             "cargo_types": ["water_ice"],
             "naming": {
                 "adjectives": ["Solar"],
