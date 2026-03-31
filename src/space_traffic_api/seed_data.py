@@ -24,7 +24,10 @@ def _sanitize_station_token(raw: str) -> str:
 
 def _normalize_size_classes(path: str, value: Any) -> list[str]:
     classes = _ensure_str_list(path, value, min_items=1)
-    return [item.strip().lower() for item in classes]
+    normalized = [item.strip().lower() for item in classes]
+    if not all(normalized):
+        raise ValueError(f"{path} entries must be non-empty strings after normalization")
+    return normalized
 
 
 def load_seed_catalog(catalog_path: str | None = None) -> dict[str, Any]:
@@ -94,10 +97,13 @@ def load_seed_catalog(catalog_path: str | None = None) -> dict[str, Any]:
         if not isinstance(name_template, str) or "{body}" not in name_template:
             raise ValueError(f"stations.templates[{idx}].name_template must include {{body}}")
         raw_size_classes = template.get("allowed_size_classes", ["small", "medium", "large", "xlarge"])
+        parent_body_raw = template.get("parent_body")
+        if parent_body_raw is not None and not isinstance(parent_body_raw, str):
+            raise ValueError(f"stations.templates[{idx}].parent_body must be a string or null")
         station_templates[body_type] = {
             "id_prefix": id_prefix,
             "name_template": name_template,
-            "parent_body": str(template.get("parent_body", "")),
+            "parent_body": parent_body_raw or "",
             "allowed_size_classes": _normalize_size_classes(
                 f"stations.templates[{idx}].allowed_size_classes", raw_size_classes
             ),
@@ -280,7 +286,12 @@ def build_ships(
             for station_id in station_ids
             if not station_capabilities.get(station_id) or size_class in station_capabilities[station_id]
         ]
-        home_station_id = rng.choice(compatible_station_ids or station_ids)
+        if not compatible_station_ids:
+            raise ValueError(
+                f"No compatible home stations found for ship size class '{size_class}' "
+                f"(ship type: '{ship_type}'). Check station allowed_size_classes configuration."
+            )
+        home_station_id = rng.choice(compatible_station_ids)
 
         ship_name = f"{rng.choice(naming['adjectives'])} {rng.choice(naming['nouns'])}"
         captain = f"{rng.choice(naming['captain_first'])} {rng.choice(naming['captain_last'])}"
