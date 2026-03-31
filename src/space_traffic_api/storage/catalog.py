@@ -87,7 +87,7 @@ class CatalogRepository:
         with self._context.lock:
             total_count = int(self._context.conn.execute(count_query, params).fetchone()[0])
             # Get paginated results
-            query = f"SELECT * FROM stations{where_sql} ORDER BY {order_by} {order} LIMIT ? OFFSET ?"
+            query = f"SELECT * FROM stations{where_sql} ORDER BY {order_by} {order}, id ASC LIMIT ? OFFSET ?"
             rows = self._context.conn.execute(query, params + [limit, offset]).fetchall()
 
         records = [dict(row) for row in rows]
