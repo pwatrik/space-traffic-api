@@ -22,6 +22,9 @@ def test_default_seed_catalog_builds_expected_ids():
     assert lifecycle["decommission"]["enabled"] is True
     assert lifecycle["war_impact"]["enabled"] is True
     assert lifecycle["build_queue"]["enabled"] is True
+    assert lifecycle["pirate_activity"]["enabled"] is True
+    assert lifecycle["pirate_activity"]["strength_start"] == 1.0
+    assert lifecycle["pirate_activity"]["strength_end_threshold"] == 0.5
 
 
 def test_custom_seed_catalog_defaults_are_applied():
@@ -56,8 +59,16 @@ def test_custom_seed_catalog_defaults_are_applied():
             ]
         },
         "ship_generation": {
-            "faction_distribution": {"merchant": 1.0},
-            "ship_types": [{"name": "Freighter", "faction": "merchant", "size_class": "large"}],
+            "faction_distribution": {"bounty_hunter": 1.0},
+            "ship_types": [
+                {
+                    "name": "Star Wasp",
+                    "faction": "bounty_hunter",
+                    "size_class": "small",
+                    "displacement_min_million_m3": 0.01,
+                    "displacement_max_million_m3": 0.5,
+                },
+            ],
             "cargo_types": ["water_ice"],
             "naming": {
                 "adjectives": ["Solar"],
@@ -88,6 +99,16 @@ def test_custom_seed_catalog_defaults_are_applied():
                 "faction_distribution": {"merchant": 1.0},
                 "spawn_policy": "compatible_random_station",
             },
+            "pirate_activity": {
+                "enabled": True,
+                "allowed_anchors": ["Earth", "Asteroid Belt"],
+                "strength_start": 1.0,
+                "strength_end_threshold": 0.5,
+                "merchant_arrival_destruction_multiplier": 5.0,
+                "strength_decay_per_bounty_hunter_arrival": 0.03,
+                "respawn_min_days": 12,
+                "respawn_max_days": 22,
+            },
         },
     }
 
@@ -102,10 +123,13 @@ def test_custom_seed_catalog_defaults_are_applied():
 
     assert len(stations) == 2
     assert len(ships) == 3
-    assert all(ship["ship_type"] == "Freighter" for ship in ships)
+    bounty_ships = [ship for ship in ships if ship["faction"] == "bounty_hunter"]
+    assert bounty_ships
+    assert all(0.01 <= ship["displacement_million_m3"] <= 0.5 for ship in bounty_ships)
     assert catalog["lifecycle"]["decommission"]["age_years_soft_limit"] == 10.0
     assert catalog["lifecycle"]["war_impact"]["max_losses_per_event"] == 2
     assert catalog["lifecycle"]["build_queue"]["base_builds_per_day"] == 2.0
+    assert catalog["lifecycle"]["pirate_activity"]["respawn_min_days"] == 12.0
 
 
 def test_invalid_seed_catalog_raises():
