@@ -84,9 +84,10 @@
   },
   "ship_generation": {
     "faction_distribution": {
-      "merchant": 0.6,
-      "government": 0.25,
-      "military": 0.15
+      "merchant": 0.36,
+      "government": 0.15,
+      "military": 0.12,
+      "bounty_hunter": 0.37
     },
     "ship_types": [
       {"name": "Freighter", "faction": "merchant", "size_class": "large", "speed_au_per_hour": 0.95, "crew_min": 18, "crew_max": 60},
@@ -104,7 +105,22 @@
       {"name": "Frigate", "faction": "military", "size_class": "medium", "speed_au_per_hour": 1.44, "crew_min": 70, "crew_max": 160},
       {"name": "Interceptor", "faction": "military", "size_class": "small", "speed_au_per_hour": 1.7, "crew_min": 12, "crew_max": 32},
       {"name": "Carrier", "faction": "military", "size_class": "xlarge", "speed_au_per_hour": 0.92, "crew_min": 380, "crew_max": 1200},
-      {"name": "Recon Cruiser", "faction": "military", "size_class": "medium", "speed_au_per_hour": 1.35, "crew_min": 85, "crew_max": 220}
+      {"name": "Recon Cruiser", "faction": "military", "size_class": "medium", "speed_au_per_hour": 1.35, "crew_min": 85, "crew_max": 220},
+
+      {"name": "Star Wasp", "faction": "bounty_hunter", "size_class": "small", "speed_au_per_hour": 1.92, "crew_min": 1, "crew_max": 4, "displacement_min_million_m3": 0.01, "displacement_max_million_m3": 0.08},
+      {"name": "Comet Jackal", "faction": "bounty_hunter", "size_class": "small", "speed_au_per_hour": 1.88, "crew_min": 1, "crew_max": 5, "displacement_min_million_m3": 0.03, "displacement_max_million_m3": 0.12},
+      {"name": "Dust Viper", "faction": "bounty_hunter", "size_class": "small", "speed_au_per_hour": 1.95, "crew_min": 1, "crew_max": 3, "displacement_min_million_m3": 0.01, "displacement_max_million_m3": 0.05},
+      {"name": "Nova Lynx", "faction": "bounty_hunter", "size_class": "small", "speed_au_per_hour": 1.85, "crew_min": 2, "crew_max": 6, "displacement_min_million_m3": 0.04, "displacement_max_million_m3": 0.18},
+      {"name": "Night Halberd", "faction": "bounty_hunter", "size_class": "small", "speed_au_per_hour": 1.78, "crew_min": 2, "crew_max": 7, "displacement_min_million_m3": 0.06, "displacement_max_million_m3": 0.22},
+      {"name": "Cinder Kite", "faction": "bounty_hunter", "size_class": "small", "speed_au_per_hour": 1.9, "crew_min": 1, "crew_max": 5, "displacement_min_million_m3": 0.02, "displacement_max_million_m3": 0.11},
+      {"name": "Black Orbit", "faction": "bounty_hunter", "size_class": "small", "speed_au_per_hour": 1.83, "crew_min": 2, "crew_max": 6, "displacement_min_million_m3": 0.05, "displacement_max_million_m3": 0.2},
+      {"name": "Ghost Anchor", "faction": "bounty_hunter", "size_class": "small", "speed_au_per_hour": 1.74, "crew_min": 3, "crew_max": 8, "displacement_min_million_m3": 0.08, "displacement_max_million_m3": 0.28},
+      {"name": "Ion Talon", "faction": "bounty_hunter", "size_class": "small", "speed_au_per_hour": 1.97, "crew_min": 1, "crew_max": 4, "displacement_min_million_m3": 0.01, "displacement_max_million_m3": 0.07},
+      {"name": "Razor Pilgrim", "faction": "bounty_hunter", "size_class": "small", "speed_au_per_hour": 1.8, "crew_min": 2, "crew_max": 7, "displacement_min_million_m3": 0.05, "displacement_max_million_m3": 0.24},
+      {"name": "Silent Lantern", "faction": "bounty_hunter", "size_class": "small", "speed_au_per_hour": 1.76, "crew_min": 2, "crew_max": 8, "displacement_min_million_m3": 0.07, "displacement_max_million_m3": 0.33},
+      {"name": "Meteor Hound", "faction": "bounty_hunter", "size_class": "small", "speed_au_per_hour": 1.82, "crew_min": 2, "crew_max": 6, "displacement_min_million_m3": 0.04, "displacement_max_million_m3": 0.16},
+      {"name": "Gale Spur", "faction": "bounty_hunter", "size_class": "small", "speed_au_per_hour": 1.86, "crew_min": 1, "crew_max": 5, "displacement_min_million_m3": 0.02, "displacement_max_million_m3": 0.14},
+      {"name": "Brimstone Needle", "faction": "bounty_hunter", "size_class": "small", "speed_au_per_hour": 1.93, "crew_min": 1, "crew_max": 4, "displacement_min_million_m3": 0.01, "displacement_max_million_m3": 0.09}
     ],
     "cargo_types": [
       "rare_earth_metals",
@@ -208,11 +224,38 @@
       "base_builds_per_day": 1.8,
       "max_builds_per_day": 5,
       "faction_distribution": {
-        "merchant": 0.55,
-        "government": 0.25,
-        "military": 0.2
+        "merchant": 0.35,
+        "government": 0.15,
+        "military": 0.12,
+        "bounty_hunter": 0.38
       },
       "spawn_policy": "compatible_random_station"
+    },
+    "pirate_activity": {
+      "enabled": true,
+      "allowed_anchors": [
+        "Mercury",
+        "Venus",
+        "Earth",
+        "Mars",
+        "Asteroid Belt",
+        "Jupiter",
+        "Saturn",
+        "Uranus",
+        "Neptune",
+        "Pluto"
+      ],
+      "strength_start": 1.0,
+      "strength_end_threshold": 0.5,
+      "ambient_strength_decay_per_day": 0.005,
+      "merchant_arrival_base_destruction_chance": 0.04,
+      "merchant_arrival_destruction_multiplier": 4.0,
+      "bounty_hunter_response_bias": 0.9,
+      "bounty_hunter_idle_departure_multiplier": 0.2,
+      "bounty_hunter_active_departure_multiplier": 6.0,
+      "strength_decay_per_bounty_hunter_arrival": 0.02,
+      "respawn_min_days": 10,
+      "respawn_max_days": 30
     }
   }
 }

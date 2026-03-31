@@ -6,7 +6,7 @@ Fake event API for data engineering ingestion demos. It simulates ship departure
 
 - Static domain data:
   - Stations: one per major planet, major moon, and major asteroid.
-  - Ships: 220 registry entries across merchant, government, and military factions.
+  - Ships: 220 registry entries across merchant, government, military, and bounty_hunter factions.
 - Departure generation:
   - Baseline throughput: 10-20 events/minute.
   - Background generator starts at app initialization.
@@ -21,6 +21,7 @@ Fake event API for data engineering ingestion demos. It simulates ship departure
 - Control plane:
   - Deterministic mode and seed control.
   - Named scenario bursts: `war`, `shortage`, `solar_flare`.
+  - Pirate activity lifecycle with localized risk zones and bounty hunter suppression.
   - Fault injection toggles for malformed/out-of-order/etc events.
 
 ## Run Locally
@@ -52,7 +53,7 @@ Header options:
 ## Core Endpoints
 
 - `GET /stations?body_type=planet|moon|asteroid`
-- `GET /ships?faction=merchant|government|military&home_station_id=...&cargo=...&ship_type=...`
+- `GET /ships?faction=merchant|government|military|bounty_hunter&home_station_id=...&cargo=...&ship_type=...`
 - `GET /departures?since_id=0&since_time=...&limit=100&order=asc|desc`
 - `GET /departures/stream`
 - `GET /control-events?since_id=0&limit=100&order=asc|desc`
@@ -113,3 +114,4 @@ Optional overrides:
   - When exceeded, the service culls oldest departures first, then oldest control events if necessary.
 - Fault injections are flagged per event in `fault_flags`.
 - Control-plane changes are persisted and streamable as `control_events` so consumers can correlate data anomalies with scenario, fault, and reset actions.
+- `GET /config` includes `pirate_event` state and scenario-adjusted `effective_lifecycle` values.

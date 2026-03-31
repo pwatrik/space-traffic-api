@@ -48,6 +48,15 @@ def _ensure_positive_number(path: str, value: Any) -> float:
     return number
 
 
+def _ensure_non_negative_number(path: str, value: Any) -> float:
+    if not isinstance(value, (int, float)):
+        raise ValueError(f"{path} must be a number")
+    number = float(value)
+    if number < 0:
+        raise ValueError(f"{path} must be non-negative")
+    return number
+
+
 def _normalize_weight_map(path: str, value: Any) -> dict[str, float]:
     if not isinstance(value, dict) or not value:
         raise ValueError(f"{path} must be a non-empty object")
@@ -161,8 +170,30 @@ def load_seed_catalog(catalog_path: str | None = None) -> dict[str, Any]:
             raise ValueError(f"ship_generation.ship_types[{idx}].faction must be a non-empty string")
         if not isinstance(size_class, str) or not size_class.strip():
             raise ValueError(f"ship_generation.ship_types[{idx}].size_class must be a non-empty string")
+        normalized_faction = faction.strip().lower()
+        if normalized_faction not in normalized_distribution:
+            raise ValueError(
+                f"ship_generation.ship_types[{idx}].faction '{normalized_faction}' must exist in "
+                "ship_generation.faction_distribution"
+            )
+        displacement_min = _ensure_non_negative_number(
+            f"ship_generation.ship_types[{idx}].displacement_min_million_m3",
+            row.get("displacement_min_million_m3", 0.8),
+        )
+        displacement_max = _ensure_non_negative_number(
+            f"ship_generation.ship_types[{idx}].displacement_max_million_m3",
+            row.get("displacement_max_million_m3", 22.0),
+        )
+        if displacement_max < displacement_min:
+            raise ValueError(
+                f"ship_generation.ship_types[{idx}].displacement_max_million_m3 must be >= "
+                "displacement_min_million_m3"
+            )
         normalized = dict(row)
+        normalized["faction"] = normalized_faction
         normalized["size_class"] = size_class.strip().lower()
+        normalized["displacement_min_million_m3"] = displacement_min
+        normalized["displacement_max_million_m3"] = displacement_max
         ship_types.append(normalized)
 
     naming = ship_generation.get("naming")
@@ -260,6 +291,87 @@ def load_seed_catalog(catalog_path: str | None = None) -> dict[str, Any]:
         "spawn_policy": spawn_policy.strip().lower(),
     }
 
+    pirate_raw = lifecycle_raw.get("pirate_activity", {})
+    if pirate_raw is None:
+        pirate_raw = {}
+    if not isinstance(pirate_raw, dict):
+        raise ValueError("lifecycle.pirate_activity must be an object")
+
+    anchors_default = list(planets)
+    if "Asteroid Belt" not in anchors_default:
+        anchors_default.append("Asteroid Belt")
+    allowed_anchors = _ensure_str_list(
+        "lifecycle.pirate_activity.allowed_anchors",
+        pirate_raw.get("allowed_anchors", anchors_default),
+        min_items=1,
+    )
+    allowed_anchor_list = list(dict.fromkeys(allowed_anchors))
+    for anchor in allowed_anchor_list:
+        if anchor not in normalized_distance_order:
+            raise ValueError(
+                "lifecycle.pirate_activity.allowed_anchors entries must exist in "
+                "celestial.distance_order"
+            )
+
+    strength_start = _ensure_positive_number(
+        "lifecycle.pirate_activity.strength_start",
+        pirate_raw.get("strength_start", 1.0),
+    )
+    strength_end_threshold = _ensure_positive_number(
+        "lifecycle.pirate_activity.strength_end_threshold",
+        pirate_raw.get("strength_end_threshold", 0.5),
+    )
+    if strength_end_threshold >= strength_start:
+        raise ValueError("lifecycle.pirate_activity.strength_end_threshold must be less than strength_start")
+
+    respawn_min_days = _ensure_non_negative_number(
+        "lifecycle.pirate_activity.respawn_min_days",
+        pirate_raw.get("respawn_min_days", 10.0),
+    )
+    respawn_max_days = _ensure_non_negative_number(
+        "lifecycle.pirate_activity.respawn_max_days",
+        pirate_raw.get("respawn_max_days", 30.0),
+    )
+    if respawn_max_days < respawn_min_days:
+        raise ValueError("lifecycle.pirate_activity.respawn_max_days must be >= respawn_min_days")
+
+    pirate_activity = {
+        "enabled": bool(pirate_raw.get("enabled", True)),
+        "allowed_anchors": allowed_anchor_list,
+        "strength_start": strength_start,
+        "strength_end_threshold": strength_end_threshold,
+        "ambient_strength_decay_per_day": _ensure_non_negative_number(
+            "lifecycle.pirate_activity.ambient_strength_decay_per_day",
+            pirate_raw.get("ambient_strength_decay_per_day", 0.0),
+        ),
+        "merchant_arrival_base_destruction_chance": _ensure_probability(
+            "lifecycle.pirate_activity.merchant_arrival_base_destruction_chance",
+            pirate_raw.get("merchant_arrival_base_destruction_chance", 0.04),
+        ),
+        "merchant_arrival_destruction_multiplier": _ensure_positive_number(
+            "lifecycle.pirate_activity.merchant_arrival_destruction_multiplier",
+            pirate_raw.get("merchant_arrival_destruction_multiplier", 4.0),
+        ),
+        "bounty_hunter_response_bias": _ensure_probability(
+            "lifecycle.pirate_activity.bounty_hunter_response_bias",
+            pirate_raw.get("bounty_hunter_response_bias", 0.9),
+        ),
+        "bounty_hunter_idle_departure_multiplier": _ensure_non_negative_number(
+            "lifecycle.pirate_activity.bounty_hunter_idle_departure_multiplier",
+            pirate_raw.get("bounty_hunter_idle_departure_multiplier", 0.2),
+        ),
+        "bounty_hunter_active_departure_multiplier": _ensure_non_negative_number(
+            "lifecycle.pirate_activity.bounty_hunter_active_departure_multiplier",
+            pirate_raw.get("bounty_hunter_active_departure_multiplier", 6.0),
+        ),
+        "strength_decay_per_bounty_hunter_arrival": _ensure_non_negative_number(
+            "lifecycle.pirate_activity.strength_decay_per_bounty_hunter_arrival",
+            pirate_raw.get("strength_decay_per_bounty_hunter_arrival", 0.02),
+        ),
+        "respawn_min_days": respawn_min_days,
+        "respawn_max_days": respawn_max_days,
+    }
+
     return {
         "celestial": {
             "planets": planets,
@@ -289,6 +401,7 @@ def load_seed_catalog(catalog_path: str | None = None) -> dict[str, Any]:
             "decommission": decommission,
             "war_impact": war_impact,
             "build_queue": build_queue,
+            "pirate_activity": pirate_activity,
         },
     }
 
@@ -392,6 +505,8 @@ def build_ships(
         ship_type_choice = rng.choice(ship_type_options)
         ship_type = ship_type_choice["name"]
         size_class = ship_type_choice["size_class"]
+        displacement_min = float(ship_type_choice.get("displacement_min_million_m3", 0.8))
+        displacement_max = float(ship_type_choice.get("displacement_max_million_m3", 22.0))
 
         compatible_station_ids = [
             station_id
@@ -416,7 +531,7 @@ def build_ships(
                 "faction": faction,
                 "ship_type": ship_type,
                 "size_class": size_class,
-                "displacement_million_m3": round(rng.uniform(0.8, 22.0), 3),
+                "displacement_million_m3": round(rng.uniform(displacement_min, displacement_max), 3),
                 "home_station_id": home_station_id,
                 "captain_name": captain,
                 "cargo": cargo,
