@@ -211,8 +211,18 @@ def load_seed_catalog(catalog_path: str | None = None) -> dict[str, Any]:
         ship_types.append(normalized)
 
     naming = ship_generation.get("naming")
-    if not isinstance(naming, dict):
+    if naming is not None and not isinstance(naming, dict):
         raise ValueError("ship_generation.naming must be an object")
+    naming = naming or {}
+
+    naming_fallback = load_naming_config()
+
+    def _resolve_naming_list(key: str, default: list[str]) -> list[str]:
+        if key in naming:
+            value = naming.get(key)
+        else:
+            value = naming_fallback.get(key, default)
+        return _ensure_str_list(f"ship_generation.naming.{key}", value, min_items=1)
 
     defaults = ship_generation.get("defaults")
     if not isinstance(defaults, dict):
@@ -406,10 +416,10 @@ def load_seed_catalog(catalog_path: str | None = None) -> dict[str, Any]:
             "ship_types": ship_types,
             "cargo_types": _ensure_str_list("ship_generation.cargo_types", ship_generation.get("cargo_types"), min_items=1),
             "naming": {
-                "adjectives": _ensure_str_list("ship_generation.naming.adjectives", naming.get("adjectives"), min_items=1),
-                "nouns": _ensure_str_list("ship_generation.naming.nouns", naming.get("nouns"), min_items=1),
-                "captain_first": _ensure_str_list("ship_generation.naming.captain_first", naming.get("captain_first"), min_items=1),
-                "captain_last": _ensure_str_list("ship_generation.naming.captain_last", naming.get("captain_last"), min_items=1),
+                "adjectives": _resolve_naming_list("adjectives", ["Solar"]),
+                "nouns": _resolve_naming_list("nouns", ["Pioneer"]),
+                "captain_first": _resolve_naming_list("captain_first", ["Alex"]),
+                "captain_last": _resolve_naming_list("captain_last", ["Voss"]),
             },
             "defaults": {
                 "ship_count": ship_count,
