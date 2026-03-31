@@ -9,7 +9,7 @@ from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from ..seed_data import station_distance_groups
+from ..seed_data import load_naming_config, station_distance_groups
 from ..store import SQLiteStore
 from .runtime import RuntimeState
 from .scenarios import SCENARIO_DEFINITIONS
@@ -122,6 +122,8 @@ class DepartureGenerator(threading.Thread):
             self._ship_speed_multiplier = float(raw_speed_multiplier)
         else:
             self._ship_speed_multiplier = 84.0
+
+        self._naming = load_naming_config()
 
         self._rng: random.Random | None = None
         self._sim_time: datetime | None = None
@@ -670,10 +672,11 @@ class DepartureGenerator(threading.Thread):
         ship_types = self._ship_generation.get("ship_types") or []
         cargo_types = self._ship_generation.get("cargo_types") or []
         naming = self._ship_generation.get("naming") or {}
-        adjectives = naming.get("adjectives") or ["Solar"]
-        nouns = naming.get("nouns") or ["Pioneer"]
-        captain_first = naming.get("captain_first") or ["Alex"]
-        captain_last = naming.get("captain_last") or ["Voss"]
+        adjectives = self._naming.get("adjectives") or naming.get("adjectives") or ["Solar"]
+        nouns = self._naming.get("nouns") or naming.get("nouns") or ["Pioneer"]
+        captain_first = self._naming.get("captain_first") or naming.get("captain_first") or ["Alex"]
+        captain_last = self._naming.get("captain_last") or naming.get("captain_last") or ["Voss"]
+        ship_names_singular = list(self._naming.get("ship_names_singular") or [])
 
         if not ship_types or not cargo_types:
             return
@@ -694,9 +697,13 @@ class DepartureGenerator(threading.Thread):
 
             ship_id = f"SHIP-{self._next_ship_sequence:04d}"
             self._next_ship_sequence += 1
+            if ship_names_singular and self._rng.random() < 0.5:
+                new_ship_name = self._rng.choice(ship_names_singular)
+            else:
+                new_ship_name = f"{self._rng.choice(adjectives)} {self._rng.choice(nouns)}"
             ship = {
                 "id": ship_id,
-                "name": f"{self._rng.choice(adjectives)} {self._rng.choice(nouns)}",
+                "name": new_ship_name,
                 "faction": str(choice.get("faction") or faction),
                 "ship_type": str(choice.get("name") or "Auxiliary"),
                 "size_class": size_class,
