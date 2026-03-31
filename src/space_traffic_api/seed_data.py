@@ -88,10 +88,19 @@ def load_seed_catalog(catalog_path: str | None = None) -> dict[str, Any]:
             raise ValueError(f"stations.templates[{idx}].id_prefix must be a non-empty string")
         if not isinstance(name_template, str) or "{body}" not in name_template:
             raise ValueError(f"stations.templates[{idx}].name_template must include {{body}}")
+        parent_body_raw = template.get("parent_body")
+        if parent_body_raw is None:
+            parent_body = ""
+        elif isinstance(parent_body_raw, str):
+            parent_body = parent_body_raw
+        else:
+            raise ValueError(
+                f"stations.templates[{idx}].parent_body must be a string or null if present"
+            )
         station_templates[body_type] = {
             "id_prefix": id_prefix,
             "name_template": name_template,
-            "parent_body": str(template.get("parent_body", "")),
+            "parent_body": parent_body,
         }
 
     faction_distribution = ship_generation.get("faction_distribution")
