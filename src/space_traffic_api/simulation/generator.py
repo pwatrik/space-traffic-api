@@ -187,13 +187,15 @@ class DepartureGenerator(threading.Thread):
             event = self._build_event(state, scenario, tick_time)
             if event is None:
                 self._advance_sim_time(state, tick_time, interval_seconds)
-                time.sleep(min(1.0, interval_seconds))
+                if self._stop_event.wait(timeout=min(1.0, interval_seconds)):
+                    break
                 continue
 
             self._apply_faults(event, state)
 
             if "delayed_insert" in event.get("fault_flags", []):
-                time.sleep(1.5)
+                if self._stop_event.wait(timeout=1.5):
+                    break
 
             row_id = self._store.insert_departure(event)
             event["id"] = row_id
@@ -767,7 +769,7 @@ class DepartureGenerator(threading.Thread):
             return None
 
         departure_time = tick_time
-        eta = self._estimate_arrival(departure_time, src, dst)
+        eta = self.estimate_arrival(departure_time, src, dst)
 
         departed = self._store.begin_ship_transit(
             ship_id=ship["ship_id"],
@@ -930,7 +932,7 @@ class DepartureGenerator(threading.Thread):
         if state.get("deterministic_mode"):
             self._sim_time = tick_time + timedelta(seconds=interval_seconds)
 
-    def _estimate_arrival(self, departure_time: datetime, source: str, destination: str) -> datetime:
+    def estimate_arrival(self, departure_time: datetime, source: str, destination: str) -> datetime:
         if self._rng is None:
             self._ensure_rng(self._runtime.snapshot())
 

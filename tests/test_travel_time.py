@@ -11,9 +11,9 @@ def test_default_ship_speed_multiplier_keeps_long_routes_near_one_hour(monkeypat
 
     app = create_app()
     try:
-        generator = app.config["space_simulation"]._generator
+        simulation = app.config["space_simulation"]
         departure_time = datetime.now(UTC)
-        eta = generator._estimate_arrival(departure_time, "STN-PLANET-MERCURY", "STN-PLANET-PLUTO")
+        eta = simulation.estimate_arrival(departure_time, "STN-PLANET-MERCURY", "STN-PLANET-PLUTO")
         hours = (eta - departure_time).total_seconds() / 3600.0
 
         assert 0.8 <= hours <= 1.1
