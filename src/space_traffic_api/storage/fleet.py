@@ -132,9 +132,21 @@ class FleetRepository:
                     departure_time = ?,
                     est_arrival_time = ?,
                     updated_at = ?
-                WHERE ship_id = ? AND status = 'active' AND in_transit = 0
+                WHERE
+                    ship_id = ?
+                    AND status = 'active'
+                    AND in_transit = 0
+                    AND current_station_id = ?
                 """,
-                (source_station_id, destination_station_id, departure_time, est_arrival_time, now, ship_id),
+                (
+                    source_station_id,
+                    destination_station_id,
+                    departure_time,
+                    est_arrival_time,
+                    now,
+                    ship_id,
+                    source_station_id,
+                ),
             )
             self._context.conn.commit()
             return int(cur.rowcount) > 0

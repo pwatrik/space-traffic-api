@@ -4,11 +4,11 @@ from tempfile import TemporaryDirectory
 from space_traffic_api.app import create_app
 
 
-def test_ship_state_seeded_and_resettable():
+def test_ship_state_seeded_and_resettable(monkeypatch):
     with TemporaryDirectory() as tmp:
-        os.environ["SPACE_TRAFFIC_DB_PATH"] = f"{tmp}/test.db"
-        os.environ["SPACE_TRAFFIC_API_KEY"] = "test-key"
-        os.environ["SPACE_TRAFFIC_DISABLE_GENERATOR"] = "true"
+        monkeypatch.setenv("SPACE_TRAFFIC_DB_PATH", f"{tmp}/test.db")
+        monkeypatch.setenv("SPACE_TRAFFIC_API_KEY", "test-key")
+        monkeypatch.setenv("SPACE_TRAFFIC_DISABLE_GENERATOR", "true")
 
         app = create_app()
         client = app.test_client()
