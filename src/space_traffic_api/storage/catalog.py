@@ -139,7 +139,12 @@ class CatalogRepository:
         with self._context.lock:
             total_count = int(self._context.conn.execute(count_query, params).fetchone()[0])
             # Get paginated results
-            query = f"SELECT * FROM ships{where_sql} ORDER BY {order_by} {order} LIMIT ? OFFSET ?"
+            if order_by == "id":
+                order_clause = "ORDER BY id " + order
+            else:
+                # Add a unique tie-breaker to ensure stable pagination when order_by has ties
+                order_clause = f"ORDER BY {order_by} {order}, id ASC"
+            query = f"SELECT * FROM ships{where_sql} {order_clause} LIMIT ? OFFSET ?"
             rows = self._context.conn.execute(query, params + [limit, offset]).fetchall()
         return [dict(row) for row in rows], total_count
 
