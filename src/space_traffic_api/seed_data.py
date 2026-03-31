@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 def _default_catalog_path() -> Path:
-    return Path(__file__).resolve().parent / "data" / "seed_catalog.json"
+    return Path(__file__).resolve().parent / "data" / "catalog_config.json"
 
 
 def _ensure_str_list(path: str, value: Any, *, min_items: int = 1) -> list[str]:
