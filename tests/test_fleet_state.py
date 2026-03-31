@@ -17,7 +17,7 @@ def test_ship_state_seeded_and_resettable(monkeypatch):
             states = client.get("/ships/state", headers=headers)
             assert states.status_code == 200
             body = states.get_json()
-            assert body["count"] == 220
+            assert body["count"] == 500
             assert all(ship["in_transit"] == 0 for ship in body["ships"])
             assert all("ship_age_days" in ship for ship in body["ships"])
             assert all(float(ship["ship_age_days"]) == 0.0 for ship in body["ships"])

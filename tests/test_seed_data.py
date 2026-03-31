@@ -14,7 +14,7 @@ def test_default_seed_catalog_builds_expected_ids():
     assert "STN-MOON-CHARON" in station_ids
 
     ships = build_ships(stations=stations)
-    assert len(ships) == 220
+    assert len(ships) == 500
     assert ships[0]["id"] == "SHIP-0001"
 
     catalog = load_seed_catalog()

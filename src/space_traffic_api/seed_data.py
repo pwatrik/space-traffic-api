@@ -203,7 +203,7 @@ def load_seed_catalog(catalog_path: str | None = None) -> dict[str, Any]:
     defaults = ship_generation.get("defaults")
     if not isinstance(defaults, dict):
         raise ValueError("ship_generation.defaults must be an object")
-    ship_count = defaults.get("ship_count", 220)
+    ship_count = defaults.get("ship_count", 500)
     ship_seed = defaults.get("ship_seed", 9001)
     ship_speed_multiplier = defaults.get("ship_speed_multiplier", 84.0)
     if not isinstance(ship_count, int) or ship_count < 1:
