@@ -10,6 +10,22 @@ def _default_catalog_path() -> Path:
     return Path(__file__).resolve().parent / "data" / "catalog_config.json"
 
 
+def _default_naming_path() -> Path:
+    return Path(__file__).resolve().parent / "data" / "naming_config.json"
+
+
+def load_naming_config(naming_path: str | None = None) -> dict[str, Any]:
+    path = Path(naming_path) if naming_path else _default_naming_path()
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Failed to parse JSON in naming config at {path}") from exc
+    except OSError as exc:
+        raise ValueError(f"Failed to read naming config at {path}") from exc
+
+
 def _ensure_str_list(path: str, value: Any, *, min_items: int = 1) -> list[str]:
     if not isinstance(value, list) or len(value) < min_items or not all(isinstance(item, str) and item for item in value):
         if min_items > 0:
@@ -197,8 +213,18 @@ def load_seed_catalog(catalog_path: str | None = None) -> dict[str, Any]:
         ship_types.append(normalized)
 
     naming = ship_generation.get("naming")
-    if not isinstance(naming, dict):
+    if naming is not None and not isinstance(naming, dict):
         raise ValueError("ship_generation.naming must be an object")
+    naming = naming or {}
+
+    naming_fallback = load_naming_config()
+
+    def _resolve_naming_list(key: str, default: list[str]) -> list[str]:
+        if key in naming:
+            value = naming.get(key)
+        else:
+            value = naming_fallback.get(key, default)
+        return _ensure_str_list(f"ship_generation.naming.{key}", value, min_items=1)
 
     defaults = ship_generation.get("defaults")
     if not isinstance(defaults, dict):
@@ -392,10 +418,10 @@ def load_seed_catalog(catalog_path: str | None = None) -> dict[str, Any]:
             "ship_types": ship_types,
             "cargo_types": _ensure_str_list("ship_generation.cargo_types", ship_generation.get("cargo_types"), min_items=1),
             "naming": {
-                "adjectives": _ensure_str_list("ship_generation.naming.adjectives", naming.get("adjectives"), min_items=1),
-                "nouns": _ensure_str_list("ship_generation.naming.nouns", naming.get("nouns"), min_items=1),
-                "captain_first": _ensure_str_list("ship_generation.naming.captain_first", naming.get("captain_first"), min_items=1),
-                "captain_last": _ensure_str_list("ship_generation.naming.captain_last", naming.get("captain_last"), min_items=1),
+                "adjectives": _resolve_naming_list("adjectives", ["Solar"]),
+                "nouns": _resolve_naming_list("nouns", ["Pioneer"]),
+                "captain_first": _resolve_naming_list("captain_first", ["Alex"]),
+                "captain_last": _resolve_naming_list("captain_last", ["Voss"]),
             },
             "defaults": {
                 "ship_count": ship_count,
@@ -417,13 +443,31 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
     templates = catalog["stations"]["templates"]
     stations: list[dict[str, Any]] = []
 
+    naming_ext = load_naming_config()
+    raw_base_names = naming_ext.get("base_names_singular")
+    if raw_base_names is not None:
+        base_names = _ensure_str_list("naming.base_names_singular", raw_base_names, min_items=0)
+    else:
+        base_names = []
+    if base_names:
+        ship_seed = int(((catalog.get("ship_generation") or {}).get("defaults") or {}).get("ship_seed", 9001))
+        random.Random(ship_seed).shuffle(base_names)
+    _name_counter = [0]
+
+    def _next_station_name(suffix: str, fallback: str) -> str:
+        if not base_names:
+            return fallback
+        result = f"{base_names[_name_counter[0] % len(base_names)]} {suffix}"
+        _name_counter[0] += 1
+        return result
+
     for planet in catalog["celestial"]["planets"]:
         template = templates["planet"]
         sid = f"{template['id_prefix']}-{_sanitize_station_token(planet)}"
         stations.append(
             {
                 "id": sid,
-                "name": template["name_template"].format(body=planet),
+                "name": _next_station_name("Port", template["name_template"].format(body=planet)),
                 "body_name": planet,
                 "body_type": "planet",
                 "parent_body": planet,
@@ -439,7 +483,7 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
         stations.append(
             {
                 "id": sid,
-                "name": template["name_template"].format(body=moon_name),
+                "name": _next_station_name("Station", template["name_template"].format(body=moon_name)),
                 "body_name": moon_name,
                 "body_type": "moon",
                 "parent_body": parent,
@@ -453,7 +497,7 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
         stations.append(
             {
                 "id": sid,
-                "name": template["name_template"].format(body=asteroid),
+                "name": _next_station_name("Hub", template["name_template"].format(body=asteroid)),
                 "body_name": asteroid,
                 "body_type": "asteroid",
                 "parent_body": template["parent_body"] or "Asteroid Belt",
@@ -502,6 +546,16 @@ def build_ships(
         for row in stations
     }
     naming = ship_generation["naming"]
+    naming_ext = load_naming_config()
+    adjectives = naming["adjectives"]
+    nouns = naming["nouns"]
+    captain_first = naming["captain_first"]
+    captain_last = naming["captain_last"]
+    ship_names_singular_raw = naming_ext.get("ship_names_singular")
+    if ship_names_singular_raw is not None:
+        ship_names_singular = _ensure_str_list("naming.ship_names_singular", ship_names_singular_raw, min_items=0)
+    else:
+        ship_names_singular = []
 
     for i in range(1, count + 1):
         faction = _pick_faction(rng, ship_generation["faction_distribution"])
@@ -526,8 +580,11 @@ def build_ships(
             )
         home_station_id = rng.choice(compatible_station_ids)
 
-        ship_name = f"{rng.choice(naming['adjectives'])} {rng.choice(naming['nouns'])}"
-        captain = f"{rng.choice(naming['captain_first'])} {rng.choice(naming['captain_last'])}"
+        if ship_names_singular and rng.random() < 0.5:
+            ship_name = rng.choice(ship_names_singular)
+        else:
+            ship_name = f"{rng.choice(adjectives)} {rng.choice(nouns)}"
+        captain = f"{rng.choice(captain_first)} {rng.choice(captain_last)}"
         cargo = rng.choice(ship_generation["cargo_types"])
 
         ships.append(
