@@ -5,6 +5,7 @@ import queue
 import random
 import threading
 import time
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -12,6 +13,84 @@ from ..seed_data import station_distance_groups
 from ..store import SQLiteStore
 from .runtime import RuntimeState
 from .scenarios import SCENARIO_DEFINITIONS
+
+
+def build_effective_lifecycle_config(
+    base_lifecycle: dict[str, Any],
+    scenario_definition: dict[str, Any] | None,
+    intensity: float,
+) -> dict[str, Any]:
+    """Merge base lifecycle config with scenario-specific modifiers."""
+
+    effective = deepcopy(base_lifecycle)
+    if not scenario_definition:
+        return effective
+
+    overrides = scenario_definition.get("lifecycle_overrides")
+    if not isinstance(overrides, dict):
+        return effective
+
+    clamped_intensity = max(0.0, float(intensity))
+
+    def _scale_multiplier(raw_multiplier: Any) -> float:
+        multiplier = max(0.0, float(raw_multiplier))
+        return max(0.0, 1.0 + ((multiplier - 1.0) * clamped_intensity))
+
+    for channel, conf in overrides.items():
+        if not isinstance(conf, dict):
+            continue
+
+        target = effective.setdefault(channel, {})
+        if not isinstance(target, dict):
+            continue
+
+        if "enabled" in conf:
+            target["enabled"] = bool(conf["enabled"])
+
+        if "base_probability_per_day_multiplier" in conf and "base_probability_per_day" in target:
+            scale = _scale_multiplier(conf["base_probability_per_day_multiplier"])
+            target["base_probability_per_day"] = max(0.0, float(target["base_probability_per_day"]) * scale)
+
+        if "max_probability_per_day_multiplier" in conf and "max_probability_per_day" in target:
+            scale = _scale_multiplier(conf["max_probability_per_day_multiplier"])
+            target["max_probability_per_day"] = max(0.0, float(target["max_probability_per_day"]) * scale)
+
+        if "base_builds_per_day_multiplier" in conf and "base_builds_per_day" in target:
+            scale = _scale_multiplier(conf["base_builds_per_day_multiplier"])
+            target["base_builds_per_day"] = max(0.0, float(target["base_builds_per_day"]) * scale)
+
+        if "max_losses_per_event_add" in conf and "max_losses_per_event" in target:
+            add = int(round(float(conf["max_losses_per_event_add"]) * clamped_intensity))
+            target["max_losses_per_event"] = max(1, int(target["max_losses_per_event"]) + add)
+
+        if channel == "war_impact":
+            raw = conf.get("faction_loss_multiplier_overrides")
+            if isinstance(raw, dict):
+                current = target.get("faction_loss_multiplier")
+                if isinstance(current, dict):
+                    merged = dict(current)
+                    for faction, faction_multiplier in raw.items():
+                        key = str(faction).strip().lower()
+                        if not key:
+                            continue
+                        scale = _scale_multiplier(faction_multiplier)
+                        merged[key] = max(0.0, float(merged.get(key, 1.0)) * scale)
+                    target["faction_loss_multiplier"] = merged
+
+        if channel == "build_queue":
+            raw = conf.get("faction_distribution")
+            if isinstance(raw, dict) and raw:
+                normalized: dict[str, float] = {}
+                for faction, weight in raw.items():
+                    if not isinstance(weight, (int, float)) or float(weight) <= 0:
+                        continue
+                    key = str(faction).strip().lower()
+                    if key:
+                        normalized[key] = float(weight)
+                if normalized:
+                    target["faction_distribution"] = normalized
+
+    return effective
 
 
 class DepartureGenerator(threading.Thread):
@@ -71,7 +150,7 @@ class DepartureGenerator(threading.Thread):
             tick_time = self._current_tick_time(state)
 
             self._store.complete_ship_arrivals(tick_time.isoformat())
-            self._apply_lifecycle(interval_seconds=interval_seconds, tick_time=tick_time)
+            self._apply_lifecycle(interval_seconds=interval_seconds, tick_time=tick_time, scenario=scenario)
 
             if self._is_globally_interrupted(scenario):
                 self._advance_sim_time(state, tick_time, interval_seconds)
@@ -149,9 +228,22 @@ class DepartureGenerator(threading.Thread):
         eff_max = max(eff_min, int(base_max * multiplier))
         return eff_min, eff_max
 
-    def _apply_lifecycle(self, interval_seconds: float, tick_time: datetime) -> None:
+    def _apply_lifecycle(
+        self,
+        interval_seconds: float,
+        tick_time: datetime,
+        scenario: dict[str, Any] | None,
+    ) -> None:
         if interval_seconds <= 0:
             return
+
+        scenario_definition = SCENARIO_DEFINITIONS.get((scenario or {}).get("name", ""), {})
+        intensity = float((scenario or {}).get("intensity", 1.0))
+        effective_lifecycle = build_effective_lifecycle_config(
+            base_lifecycle=self._lifecycle,
+            scenario_definition=scenario_definition,
+            intensity=intensity,
+        )
 
         elapsed_days = interval_seconds / 86400.0
         self._store.increment_ship_age(elapsed_days)
@@ -160,17 +252,38 @@ class DepartureGenerator(threading.Thread):
         if not active_ships:
             return
 
-        self._run_decommission(active_ships=active_ships, elapsed_days=elapsed_days, tick_time=tick_time)
+        self._run_decommission(
+            active_ships=active_ships,
+            elapsed_days=elapsed_days,
+            tick_time=tick_time,
+            lifecycle_conf=effective_lifecycle,
+        )
         active_ships = self._store.list_active_ships_for_lifecycle()
         if not active_ships:
             return
 
-        self._run_war_impact(active_ships=active_ships, elapsed_days=elapsed_days, tick_time=tick_time)
+        self._run_war_impact(
+            active_ships=active_ships,
+            elapsed_days=elapsed_days,
+            tick_time=tick_time,
+            lifecycle_conf=effective_lifecycle,
+        )
         active_ships = self._store.list_active_ships_for_lifecycle()
-        self._run_build_queue(active_ships=active_ships, elapsed_days=elapsed_days, tick_time=tick_time)
+        self._run_build_queue(
+            active_ships=active_ships,
+            elapsed_days=elapsed_days,
+            tick_time=tick_time,
+            lifecycle_conf=effective_lifecycle,
+        )
 
-    def _run_decommission(self, active_ships: list[dict[str, Any]], elapsed_days: float, tick_time: datetime) -> None:
-        conf = self._lifecycle.get("decommission") or {}
+    def _run_decommission(
+        self,
+        active_ships: list[dict[str, Any]],
+        elapsed_days: float,
+        tick_time: datetime,
+        lifecycle_conf: dict[str, Any],
+    ) -> None:
+        conf = lifecycle_conf.get("decommission") or {}
         if not conf.get("enabled", False):
             return
 
@@ -206,8 +319,14 @@ class DepartureGenerator(threading.Thread):
                 },
             )
 
-    def _run_war_impact(self, active_ships: list[dict[str, Any]], elapsed_days: float, tick_time: datetime) -> None:
-        conf = self._lifecycle.get("war_impact") or {}
+    def _run_war_impact(
+        self,
+        active_ships: list[dict[str, Any]],
+        elapsed_days: float,
+        tick_time: datetime,
+        lifecycle_conf: dict[str, Any],
+    ) -> None:
+        conf = lifecycle_conf.get("war_impact") or {}
         if not conf.get("enabled", False):
             return
 
@@ -251,8 +370,14 @@ class DepartureGenerator(threading.Thread):
                 },
             )
 
-    def _run_build_queue(self, active_ships: list[dict[str, Any]], elapsed_days: float, tick_time: datetime) -> None:
-        conf = self._lifecycle.get("build_queue") or {}
+    def _run_build_queue(
+        self,
+        active_ships: list[dict[str, Any]],
+        elapsed_days: float,
+        tick_time: datetime,
+        lifecycle_conf: dict[str, Any],
+    ) -> None:
+        conf = lifecycle_conf.get("build_queue") or {}
         if not conf.get("enabled", False):
             return
 
