@@ -121,8 +121,17 @@ class SQLiteStore:
     def seed_ship_states(self, ships: list[dict[str, Any]]) -> None:
         self.fleet.seed_ship_states(ships)
 
-    def list_stations(self, body_type: str | None = None) -> list[dict[str, Any]]:
-        return self.catalog.list_stations(body_type=body_type)
+    def list_stations(
+        self,
+        body_type: str | None = None,
+        offset: int = 0,
+        limit: int = 1000,
+        order_by: str = "body_type",
+        order: str = "asc",
+    ) -> tuple[list[dict[str, Any]], int]:
+        return self.catalog.list_stations(
+            body_type=body_type, offset=offset, limit=limit, order_by=order_by, order=order
+        )
 
     def list_ships(
         self,
@@ -130,12 +139,20 @@ class SQLiteStore:
         home_station_id: str | None = None,
         cargo: str | None = None,
         ship_type: str | None = None,
-    ) -> list[dict[str, Any]]:
+        offset: int = 0,
+        limit: int = 1000,
+        order_by: str = "id",
+        order: str = "asc",
+    ) -> tuple[list[dict[str, Any]], int]:
         return self.catalog.list_ships(
             faction=faction,
             home_station_id=home_station_id,
             cargo=cargo,
             ship_type=ship_type,
+            offset=offset,
+            limit=limit,
+            order_by=order_by,
+            order=order,
         )
 
     def list_ship_states(
@@ -243,6 +260,18 @@ class SQLiteStore:
             "departures": self.departures.count(),
             "control_events": self.control.count_events(),
         }
+
+    def get_ship_stats_by_faction(self) -> dict[str, int]:
+        return self.catalog.get_ship_stats_by_faction()
+
+    def get_ship_stats_by_type(self) -> dict[str, int]:
+        return self.catalog.get_ship_stats_by_type()
+
+    def get_cargo_stats(self) -> dict[str, int]:
+        return self.catalog.get_cargo_stats()
+
+    def get_ship_state_summary(self) -> dict[str, int]:
+        return self.fleet.get_ship_state_summary()
 
     def set_control_state(self, state_key: str, payload: dict[str, Any]) -> None:
         self.control.set_state(state_key=state_key, payload=payload)

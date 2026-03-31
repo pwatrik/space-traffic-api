@@ -43,19 +43,37 @@ def create_api_blueprint(
     @guard
     def stations() -> Response:
         body_type = request.args.get("body_type")
-        rows = store.list_stations(body_type=body_type)
-        return jsonify({"stations": rows, "count": len(rows)})
+        offset = min(1000000, max(0, request.args.get("offset", default=0, type=int)))
+        limit = min(5000, max(1, request.args.get("limit", default=1000, type=int)))
+        order_by = request.args.get("order_by", default="body_type")
+        order = request.args.get("order", default="asc")
+        rows, total_count = store.list_stations(
+            body_type=body_type, offset=offset, limit=limit, order_by=order_by, order=order
+        )
+        return jsonify(
+            {"stations": rows, "count": len(rows), "total_count": total_count, "offset": offset, "limit": limit}
+        )
 
     @bp.get("/ships")
     @guard
     def ships() -> Response:
-        rows = store.list_ships(
+        offset = min(1000000, max(0, request.args.get("offset", default=0, type=int)))
+        limit = min(5000, max(1, request.args.get("limit", default=1000, type=int)))
+        order_by = request.args.get("order_by", default="id")
+        order = request.args.get("order", default="asc")
+        rows, total_count = store.list_ships(
             faction=request.args.get("faction"),
             home_station_id=request.args.get("home_station_id"),
             cargo=request.args.get("cargo"),
             ship_type=request.args.get("ship_type"),
+            offset=offset,
+            limit=limit,
+            order_by=order_by,
+            order=order,
         )
-        return jsonify({"ships": rows, "count": len(rows)})
+        return jsonify(
+            {"ships": rows, "count": len(rows), "total_count": total_count, "offset": offset, "limit": limit}
+        )
 
     @bp.get("/ships/state")
     @guard
@@ -68,6 +86,22 @@ def create_api_blueprint(
         limit = min(5000, max(1, request.args.get("limit", default=500, type=int)))
         rows = store.list_ship_states(status=status, in_transit=in_transit, limit=limit)
         return jsonify({"ships": rows, "count": len(rows)})
+
+    @bp.get("/stats")
+    @guard
+    def stats() -> Response:
+        snapshot = simulation.snapshot()
+        return jsonify(
+            {
+                "summary": store.get_counts(),
+                "factions": store.get_ship_stats_by_faction(),
+                "ship_types": store.get_ship_stats_by_type(),
+                "cargo_types": store.get_cargo_stats(),
+                "ship_states": store.get_ship_state_summary(),
+                "pirate_strength": snapshot.get("pirate_strength", 0.0),
+                "active_scenario": snapshot.get("active_scenario"),
+            }
+        )
 
     @bp.get("/departures")
     @guard

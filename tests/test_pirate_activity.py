@@ -130,7 +130,7 @@ def _wait_for_condition(predicate, timeout_seconds: float = 5.0, interval_second
 
 
 def _collect_departure_factions(client, headers: dict[str, str], store, target_count: int, timeout_seconds: float = 8.0) -> list[str]:
-    ships = store.list_ships()
+    ships, _ = store.list_ships()
     faction_by_ship_id = {row["id"]: row["faction"] for row in ships}
 
     baseline = client.get("/departures?limit=1000&order=asc", headers=headers)

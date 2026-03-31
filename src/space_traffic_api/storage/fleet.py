@@ -307,3 +307,10 @@ class FleetRepository:
                     "SELECT COUNT(*) FROM ship_state WHERE in_transit = 1"
                 ).fetchone()[0]
             )
+
+    def get_ship_state_summary(self) -> dict[str, int]:
+        with self._context.lock:
+            rows = self._context.conn.execute(
+                "SELECT status, COUNT(*) as count FROM ship_state GROUP BY status ORDER BY status"
+            ).fetchall()
+        return {row["status"]: row["count"] for row in rows}
