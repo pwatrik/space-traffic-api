@@ -117,6 +117,18 @@ h1 {
   grid-column: span 5;
 }
 
+.chart-strip {
+  grid-column: span 12;
+}
+
+.controls-card {
+  grid-column: span 12;
+}
+
+.explorer-card {
+  grid-column: span 12;
+}
+
 h2 {
   margin: 0 0 12px;
   font-size: 1.1rem;
@@ -149,6 +161,81 @@ h2 {
 .meta {
   margin: 10px 0 0;
   color: var(--muted);
+}
+
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.chart-grid article {
+  border: 1px solid rgba(140, 179, 207, 0.25);
+  border-radius: 10px;
+  background: rgba(4, 15, 23, 0.45);
+  padding: 10px;
+}
+
+h3 {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+canvas {
+  width: 100%;
+  height: 110px;
+  border-radius: 8px;
+  background: #071520;
+}
+
+.control-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.control-block {
+  border: 1px solid rgba(140, 179, 207, 0.25);
+  border-radius: 10px;
+  background: rgba(4, 15, 23, 0.42);
+  padding: 10px;
+}
+
+.inline-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.inline-row.compact {
+  gap: 8px;
+}
+
+label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+select,
+input[type="number"] {
+  border: 1px solid #2a4a60;
+  border-radius: 8px;
+  background: #081824;
+  color: var(--text);
+  padding: 6px 8px;
+}
+
+.check-label {
+  color: var(--text);
+}
+
+.btn.danger {
+  border-color: #703737;
+  background: linear-gradient(180deg, #4f2424, #391818);
 }
 
 table {
@@ -201,6 +288,36 @@ th {
   color: #ffb3b3;
 }
 
+.explorer-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.table-headline {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 8px;
+  gap: 8px;
+}
+
+.mini-table {
+  font-size: 0.8rem;
+}
+
+.pager {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.pager span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
 @media (max-width: 1080px) {
   .kpi-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -209,6 +326,11 @@ th {
   .table-card,
   .stream-card {
     grid-column: span 12;
+  }
+
+  .chart-grid,
+  .explorer-grid {
+    grid-template-columns: 1fr;
   }
 }
 
