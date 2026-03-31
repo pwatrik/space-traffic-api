@@ -6,6 +6,19 @@ import json
 from typing import Any
 
 
+def _parse_fault_flags(value: Any) -> list:
+    """Parse fault_flags from either a Python list or a JSON string."""
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        try:
+            result = json.loads(value)
+            return result if isinstance(result, list) else []
+        except json.JSONDecodeError:
+            return []
+    return []
+
+
 def serialize_departure(row: dict[str, Any]) -> dict[str, Any]:
     """Serialize a departure row from the database to API response format."""
     payload = row.get("payload_json")
@@ -23,7 +36,7 @@ def serialize_departure(row: dict[str, Any]) -> dict[str, Any]:
         "destination_station_id": row.get("destination_station_id"),
         "est_arrival_time": row.get("est_arrival_time"),
         "scenario": row.get("scenario"),
-        "fault_flags": json.loads(row.get("fault_flags") or "[]"),
+        "fault_flags": _parse_fault_flags(row.get("fault_flags")),
         "malformed": bool(row.get("malformed")),
         "payload": parsed_payload,
     }
