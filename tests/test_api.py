@@ -4,7 +4,7 @@ from tempfile import TemporaryDirectory
 from space_traffic_api.app import create_app
 
 
-def test_healthz_and_auth_guard():
+def test_healthz_and_public_endpoints():
     with TemporaryDirectory() as tmp:
         os.environ["SPACE_TRAFFIC_DB_PATH"] = f"{tmp}/test.db"
         os.environ["SPACE_TRAFFIC_API_KEY"] = "test-key"
@@ -15,12 +15,9 @@ def test_healthz_and_auth_guard():
             health = client.get("/healthz")
             assert health.status_code == 200
 
-            unauthorized = client.get("/stations")
-            assert unauthorized.status_code == 401
-
-            authorized = client.get("/stations", headers={"X-API-Key": "test-key"})
-            assert authorized.status_code == 200
-            payload = authorized.get_json()
+            stations = client.get("/stations")
+            assert stations.status_code == 200
+            payload = stations.get_json()
             assert payload["count"] >= 30
             station_ids = {station["id"] for station in payload["stations"]}
             assert "STN-PLANET-PLUTO" in station_ids
@@ -37,7 +34,7 @@ def test_stats_endpoint():
         app = create_app()
         client = app.test_client()
         try:
-            response = client.get("/stats", headers={"X-API-Key": "test-key"})
+            response = client.get("/stats")
             assert response.status_code == 200
             payload = response.get_json()
             # Verify required keys
@@ -69,7 +66,7 @@ def test_ships_pagination():
         client = app.test_client()
         try:
             # Test default pagination
-            response = client.get("/ships", headers={"X-API-Key": "test-key"})
+            response = client.get("/ships")
             assert response.status_code == 200
             payload = response.get_json()
             assert "ships" in payload
@@ -83,7 +80,7 @@ def test_ships_pagination():
             assert total_ships == 500  # Default fleet size
 
             # Test with limit
-            response = client.get("/ships?limit=10", headers={"X-API-Key": "test-key"})
+            response = client.get("/ships?limit=10")
             payload = response.get_json()
             assert len(payload["ships"]) == 10
             assert payload["count"] == 10
@@ -91,17 +88,17 @@ def test_ships_pagination():
             assert payload["limit"] == 10
 
             # Test with offset
-            response = client.get("/ships?limit=10&offset=5", headers={"X-API-Key": "test-key"})
+            response = client.get("/ships?limit=10&offset=5")
             payload = response.get_json()
             assert len(payload["ships"]) == 10
             assert payload["offset"] == 5
 
             # Test with order_by and order
-            response1 = client.get("/ships?limit=20&order_by=faction&order=asc", headers={"X-API-Key": "test-key"})
+            response1 = client.get("/ships?limit=20&order_by=faction&order=asc")
             payload1 = response1.get_json()
             factions1 = [ship["faction"] for ship in payload1["ships"]]
 
-            response2 = client.get("/ships?limit=20&order_by=faction&order=desc", headers={"X-API-Key": "test-key"})
+            response2 = client.get("/ships?limit=20&order_by=faction&order=desc")
             payload2 = response2.get_json()
             factions2 = [ship["faction"] for ship in payload2["ships"]]
             # Should be different order
@@ -119,7 +116,7 @@ def test_stations_pagination():
         client = app.test_client()
         try:
             # Test default pagination
-            response = client.get("/stations", headers={"X-API-Key": "test-key"})
+            response = client.get("/stations")
             assert response.status_code == 200
             payload = response.get_json()
             assert "stations" in payload
@@ -132,7 +129,7 @@ def test_stations_pagination():
             assert total_stations >= 30
 
             # Test with limit
-            response = client.get("/stations?limit=10", headers={"X-API-Key": "test-key"})
+            response = client.get("/stations?limit=10")
             payload = response.get_json()
             assert len(payload["stations"]) == 10
             assert payload["count"] == 10
@@ -140,7 +137,7 @@ def test_stations_pagination():
             assert payload["limit"] == 10
 
             # Test body_type filter with pagination
-            response = client.get("/stations?body_type=planet&limit=5", headers={"X-API-Key": "test-key"})
+            response = client.get("/stations?body_type=planet&limit=5")
             payload = response.get_json()
             assert payload["count"] <= 5
             for station in payload["stations"]:

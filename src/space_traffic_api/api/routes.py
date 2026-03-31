@@ -8,19 +8,16 @@ from datetime import UTC, datetime
 
 from flask import Blueprint, Response, jsonify, request
 
-from ..auth import require_api_key
 from ..simulation import SimulationService, list_faults, list_scenarios
 from ..store import SQLiteStore
 from .serializers import serialize_control_event, serialize_departure
 
 
 def create_api_blueprint(
-    api_key: str,
     store: SQLiteStore,
     simulation: SimulationService,
 ) -> Blueprint:
     bp = Blueprint("api", __name__)
-    guard = require_api_key(api_key)
 
     _OPENAPI_PATH = pathlib.Path(__file__).parent.parent.parent.parent / "docs" / "openapi.yaml"
 
@@ -51,7 +48,6 @@ def create_api_blueprint(
         )
 
     @bp.get("/stations")
-    @guard
     def stations() -> Response:
         body_type = request.args.get("body_type")
         offset = min(1000000, max(0, request.args.get("offset", default=0, type=int)))
@@ -66,7 +62,6 @@ def create_api_blueprint(
         )
 
     @bp.get("/ships")
-    @guard
     def ships() -> Response:
         offset = min(1000000, max(0, request.args.get("offset", default=0, type=int)))
         limit = min(5000, max(1, request.args.get("limit", default=1000, type=int)))
@@ -87,7 +82,6 @@ def create_api_blueprint(
         )
 
     @bp.get("/ships/state")
-    @guard
     def ship_states() -> Response:
         status = request.args.get("status")
         in_transit_raw = request.args.get("in_transit")
@@ -99,7 +93,6 @@ def create_api_blueprint(
         return jsonify({"ships": rows, "count": len(rows)})
 
     @bp.get("/stats")
-    @guard
     def stats() -> Response:
         snapshot = simulation.snapshot()
         return jsonify(
@@ -115,7 +108,6 @@ def create_api_blueprint(
         )
 
     @bp.get("/departures")
-    @guard
     def departures() -> Response:
         since_id = request.args.get("since_id", type=int)
         since_time = request.args.get("since_time")
@@ -141,7 +133,6 @@ def create_api_blueprint(
         )
 
     @bp.get("/departures/stream")
-    @guard
     def departures_stream() -> Response:
         subscriber = simulation.subscribe_departures()
 
@@ -163,7 +154,6 @@ def create_api_blueprint(
         return Response(event_stream(), mimetype="text/event-stream")
 
     @bp.get("/control-events")
-    @guard
     def control_events() -> Response:
         since_id = request.args.get("since_id", type=int)
         limit = min(1000, max(1, request.args.get("limit", default=100, type=int)))
@@ -174,7 +164,6 @@ def create_api_blueprint(
         return jsonify({"control_events": serialized, "count": len(serialized), "next_since_id": next_since_id})
 
     @bp.get("/control-events/stream")
-    @guard
     def control_events_stream() -> Response:
         subscriber = simulation.subscribe_control_events()
 
@@ -196,25 +185,21 @@ def create_api_blueprint(
         return Response(event_stream(), mimetype="text/event-stream")
 
     @bp.get("/config")
-    @guard
     def get_config() -> Response:
         return jsonify(simulation.snapshot())
 
     @bp.patch("/config")
-    @guard
     def patch_config() -> Response:
         payload = request.get_json(silent=True) or {}
         updated = simulation.patch_config(payload)
         return jsonify(updated)
 
     @bp.get("/scenarios")
-    @guard
     def get_scenarios() -> Response:
         snapshot = simulation.snapshot()
         return jsonify({"available": list_scenarios(), "active": snapshot.get("active_scenario")})
 
     @bp.post("/scenarios/activate")
-    @guard
     def activate_scenario() -> Response:
         payload = request.get_json(silent=True) or {}
         try:
@@ -224,19 +209,16 @@ def create_api_blueprint(
             return jsonify({"error": str(exc)}), 400
 
     @bp.post("/scenarios/deactivate")
-    @guard
     def deactivate_scenario() -> Response:
         simulation.deactivate_scenario()
         return jsonify({"active_scenario": None})
 
     @bp.get("/faults")
-    @guard
     def get_faults() -> Response:
         snapshot = simulation.snapshot()
         return jsonify({"available": list_faults(), "active": snapshot.get("active_faults", {})})
 
     @bp.post("/faults/activate")
-    @guard
     def activate_faults() -> Response:
         payload = request.get_json(silent=True) or {}
         try:
@@ -246,7 +228,6 @@ def create_api_blueprint(
             return jsonify({"error": str(exc)}), 400
 
     @bp.post("/faults/deactivate")
-    @guard
     def deactivate_faults() -> Response:
         payload = request.get_json(silent=True) or {}
         names = payload.get("names")
@@ -256,7 +237,6 @@ def create_api_blueprint(
         return jsonify({"active_faults": active})
 
     @bp.post("/control/reset")
-    @guard
     def control_reset() -> Response:
         payload = request.get_json(silent=True) or {}
         seed = payload.get("seed")

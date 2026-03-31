@@ -19,7 +19,6 @@ def _as_int(value: str | None, default: int) -> int:
 
 @dataclass(frozen=True)
 class AppConfig:
-    api_key: str
     db_path: str
     seed_catalog_path: str | None
     base_min_events_per_minute: int
@@ -34,7 +33,6 @@ class AppConfig:
     @staticmethod
     def from_env() -> "AppConfig":
         return AppConfig(
-            api_key=os.getenv("SPACE_TRAFFIC_API_KEY", "space-demo-key"),
             db_path=os.getenv("SPACE_TRAFFIC_DB_PATH", "space_traffic.db"),
             seed_catalog_path=os.getenv("SPACE_TRAFFIC_SEED_CATALOG_PATH"),
             base_min_events_per_minute=_as_int(os.getenv("SPACE_TRAFFIC_MIN_EVENTS_PER_MIN"), 10),
