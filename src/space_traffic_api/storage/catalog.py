@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from .shared import StorageContext
@@ -10,18 +11,25 @@ class CatalogRepository:
         self._context = context
 
     def seed_stations(self, stations: list[dict[str, Any]]) -> None:
+        rows = []
+        for station in stations:
+            row = dict(station)
+            row["allowed_size_classes"] = json.dumps(station.get("allowed_size_classes", []))
+            rows.append(row)
+
         with self._context.lock:
             self._context.conn.executemany(
                 """
-                INSERT INTO stations (id, name, body_name, body_type, parent_body)
-                VALUES (:id, :name, :body_name, :body_type, :parent_body)
+                INSERT INTO stations (id, name, body_name, body_type, parent_body, allowed_size_classes)
+                VALUES (:id, :name, :body_name, :body_type, :parent_body, :allowed_size_classes)
                 ON CONFLICT(id) DO UPDATE SET
                     name=excluded.name,
                     body_name=excluded.body_name,
                     body_type=excluded.body_type,
-                    parent_body=excluded.parent_body
+                    parent_body=excluded.parent_body,
+                    allowed_size_classes=excluded.allowed_size_classes
                 """,
-                stations,
+                rows,
             )
             self._context.conn.commit()
 
@@ -30,17 +38,18 @@ class CatalogRepository:
             self._context.conn.executemany(
                 """
                 INSERT INTO ships (
-                    id, name, faction, ship_type, displacement_million_m3, home_station_id,
+                    id, name, faction, ship_type, size_class, displacement_million_m3, home_station_id,
                     captain_name, cargo
                 )
                 VALUES (
-                    :id, :name, :faction, :ship_type, :displacement_million_m3, :home_station_id,
+                    :id, :name, :faction, :ship_type, :size_class, :displacement_million_m3, :home_station_id,
                     :captain_name, :cargo
                 )
                 ON CONFLICT(id) DO UPDATE SET
                     name=excluded.name,
                     faction=excluded.faction,
                     ship_type=excluded.ship_type,
+                    size_class=excluded.size_class,
                     displacement_million_m3=excluded.displacement_million_m3,
                     home_station_id=excluded.home_station_id,
                     captain_name=excluded.captain_name,
@@ -60,7 +69,14 @@ class CatalogRepository:
 
         with self._context.lock:
             rows = self._context.conn.execute(query, params).fetchall()
-        return [dict(row) for row in rows]
+        records = [dict(row) for row in rows]
+        for row in records:
+            raw = row.get("allowed_size_classes")
+            try:
+                row["allowed_size_classes"] = json.loads(raw) if raw else []
+            except json.JSONDecodeError:
+                row["allowed_size_classes"] = []
+        return records
 
     def list_ships(
         self,

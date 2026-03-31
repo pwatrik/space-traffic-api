@@ -27,7 +27,8 @@ class SQLiteStore:
                     name TEXT NOT NULL,
                     body_name TEXT NOT NULL,
                     body_type TEXT NOT NULL,
-                    parent_body TEXT NOT NULL
+                    parent_body TEXT NOT NULL,
+                    allowed_size_classes TEXT NOT NULL DEFAULT '[]'
                 );
 
                 CREATE TABLE IF NOT EXISTS ships (
@@ -35,6 +36,7 @@ class SQLiteStore:
                     name TEXT NOT NULL,
                     faction TEXT NOT NULL,
                     ship_type TEXT NOT NULL,
+                    size_class TEXT NOT NULL DEFAULT 'medium',
                     displacement_million_m3 REAL NOT NULL,
                     home_station_id TEXT NOT NULL,
                     captain_name TEXT NOT NULL,
@@ -93,7 +95,20 @@ class SQLiteStore:
                 CREATE INDEX IF NOT EXISTS idx_control_events_event_time ON control_events(event_time);
                 """
             )
+            # Backfill columns for pre-migration databases where tables already existed.
+            self._ensure_column("stations", "allowed_size_classes", "TEXT NOT NULL DEFAULT '[]'")
+            self._ensure_column("ships", "size_class", "TEXT NOT NULL DEFAULT 'medium'")
             self._context.conn.commit()
+
+    def _ensure_column(self, table_name: str, column_name: str, column_sql: str) -> None:
+        cols = {
+            row["name"]
+            for row in self._context.conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+        }
+        if column_name not in cols:
+            self._context.conn.execute(
+                f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_sql}"
+            )
 
     def seed_stations(self, stations: list[dict[str, Any]]) -> None:
         self.catalog.seed_stations(stations)

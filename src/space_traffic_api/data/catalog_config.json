@@ -64,18 +64,21 @@
       {
         "body_type": "planet",
         "id_prefix": "STN-PLANET",
-        "name_template": "{body} Prime Port"
+        "name_template": "{body} Prime Port",
+        "allowed_size_classes": ["small", "medium"]
       },
       {
         "body_type": "moon",
         "id_prefix": "STN-MOON",
-        "name_template": "{body} Orbital"
+        "name_template": "{body} Orbital",
+        "allowed_size_classes": ["small", "medium", "large", "xlarge"]
       },
       {
         "body_type": "asteroid",
         "id_prefix": "STN-AST",
         "name_template": "{body} Hub",
-        "parent_body": "Asteroid Belt"
+        "parent_body": "Asteroid Belt",
+        "allowed_size_classes": ["small", "medium"]
       }
     ]
   },
