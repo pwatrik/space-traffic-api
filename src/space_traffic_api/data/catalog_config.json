@@ -198,7 +198,8 @@
     },
     "defaults": {
       "ship_count": 220,
-      "ship_seed": 9001
+      "ship_seed": 9001,
+      "ship_speed_multiplier": 84.0
     }
   },
   "lifecycle": {

@@ -116,6 +116,12 @@ class DepartureGenerator(threading.Thread):
         self._catalog = catalog or {}
         self._lifecycle = self._catalog.get("lifecycle", {})
         self._ship_generation = self._catalog.get("ship_generation", {})
+        defaults = self._ship_generation.get("defaults") or {}
+        raw_speed_multiplier = defaults.get("ship_speed_multiplier", 84.0)
+        if isinstance(raw_speed_multiplier, (int, float)) and float(raw_speed_multiplier) > 0:
+            self._ship_speed_multiplier = float(raw_speed_multiplier)
+        else:
+            self._ship_speed_multiplier = 84.0
 
         self._rng: random.Random | None = None
         self._sim_time: datetime | None = None
@@ -148,6 +154,11 @@ class DepartureGenerator(threading.Thread):
             intensity=intensity,
         )
 
+    def effective_ship_generation_config(self) -> dict[str, Any]:
+        defaults = dict(self._ship_generation.get("defaults") or {})
+        defaults["ship_speed_multiplier"] = self._ship_speed_multiplier
+        return {"defaults": defaults}
+
     def run(self) -> None:
         while not self._stop_event.is_set():
             state = self._runtime.snapshot()
@@ -169,7 +180,8 @@ class DepartureGenerator(threading.Thread):
 
             if self._is_globally_interrupted(scenario):
                 self._advance_sim_time(state, tick_time, interval_seconds)
-                time.sleep(min(1.0, interval_seconds))
+                if self._stop_event.wait(timeout=min(1.0, interval_seconds)):
+                    break
                 continue
 
             event = self._build_event(state, scenario, tick_time)
@@ -197,7 +209,8 @@ class DepartureGenerator(threading.Thread):
 
             self._advance_sim_time(state, tick_time, interval_seconds)
 
-            time.sleep(interval_seconds)
+            if self._stop_event.wait(timeout=interval_seconds):
+                break
 
     def _ensure_rng(self, state: dict[str, Any]) -> None:
         seed = int(state["deterministic_seed"])
@@ -918,10 +931,13 @@ class DepartureGenerator(threading.Thread):
             self._sim_time = tick_time + timedelta(seconds=interval_seconds)
 
     def _estimate_arrival(self, departure_time: datetime, source: str, destination: str) -> datetime:
+        if self._rng is None:
+            self._ensure_rng(self._runtime.snapshot())
+
         src_group = self._distance_groups.get(source, 5)
         dst_group = self._distance_groups.get(destination, 5)
         hops = abs(src_group - dst_group)
-        hours = 6 + (hops * 8) + self._rng.uniform(0.5, 12.0)
+        hours = (6 + (hops * 8) + self._rng.uniform(0.5, 12.0)) / self._ship_speed_multiplier
         return departure_time + timedelta(hours=hours)
 
     def _apply_faults(self, event: dict[str, Any], state: dict[str, Any]) -> None:

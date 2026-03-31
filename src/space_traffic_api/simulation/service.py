@@ -44,6 +44,7 @@ class SimulationService:
     def snapshot(self) -> dict[str, Any]:
         state = self._runtime.snapshot()
         state["effective_lifecycle"] = self._generator.effective_lifecycle_config(state.get("active_scenario"))
+        state["effective_ship_generation"] = self._generator.effective_ship_generation_config()
         return state
 
     def patch_config(self, patch: dict[str, Any]) -> dict[str, Any]:

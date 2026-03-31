@@ -49,6 +49,7 @@ def test_activate_scenario_fault_and_reset():
             assert "effective_lifecycle" in cfg_body
             assert "war_impact" in cfg_body["effective_lifecycle"]
             assert cfg_body["effective_lifecycle"]["war_impact"]["max_losses_per_event"] >= 3
+            assert cfg_body["effective_ship_generation"]["defaults"]["ship_speed_multiplier"] == 84.0
 
             control_events = client.get("/control-events", headers=headers)
             assert control_events.status_code == 200
