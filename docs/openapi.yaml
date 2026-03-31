@@ -1,0 +1,1154 @@
+openapi: 3.1.0
+info:
+  title: Space Traffic API
+  version: "1.0"
+  description: |
+    Simulated solar-system shipping traffic API for data-engineering demos.
+
+    Generates continuous departure events across 500 ships, 40+ stations, and four factions
+    (merchant, government, military, bounty_hunter). Supports deterministic replay, named
+    scenario bursts, pirate-activity lifecycle, fault injection, and SSE streaming.
+
+    ## Authentication
+    All endpoints except `GET /healthz` and `GET /openapi.yaml` require an API key sent as either:
+    - `X-API-Key: <key>`
+    - `Authorization: Bearer <key>`
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+
+security:
+  - ApiKeyHeader: []
+
+components:
+  securitySchemes:
+    ApiKeyHeader:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    ApiKeyBearer:
+      type: http
+      scheme: bearer
+
+  parameters:
+    LimitParam:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1000
+        default: 100
+      description: Maximum number of results to return.
+    OffsetParam:
+      name: offset
+      in: query
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+      description: Number of results to skip (for pagination).
+    OrderParam:
+      name: order
+      in: query
+      schema:
+        type: string
+        enum: [asc, desc]
+        default: asc
+      description: Sort direction.
+    SinceIdParam:
+      name: since_id
+      in: query
+      schema:
+        type: integer
+      description: Return only results with id greater than this value (for cursor-based polling).
+
+  schemas:
+    Station:
+      type: object
+      required: [id, name, body_name, body_type, parent_body, allowed_size_classes]
+      properties:
+        id:
+          type: string
+          example: STN-PLANET-EARTH
+        name:
+          type: string
+          example: Avalon Prime Port
+        body_name:
+          type: string
+          example: Earth
+        body_type:
+          type: string
+          enum: [planet, moon, asteroid]
+        parent_body:
+          type: string
+          example: Sun
+        allowed_size_classes:
+          type: array
+          items:
+            type: string
+            enum: [small, medium, large, xlarge]
+          example: [small, medium]
+
+    Ship:
+      type: object
+      required: [id, name, faction, ship_type, size_class, displacement_million_m3, home_station_id, captain_name, cargo]
+      properties:
+        id:
+          type: string
+          example: SHIP-00042
+        name:
+          type: string
+          example: Iron Pioneer
+        faction:
+          type: string
+          enum: [merchant, government, military, bounty_hunter]
+        ship_type:
+          type: string
+          example: Freighter
+        size_class:
+          type: string
+          enum: [small, medium, large, xlarge]
+        displacement_million_m3:
+          type: number
+          format: float
+          example: 1.4
+        home_station_id:
+          type: string
+          example: STN-MOON-TITAN
+        captain_name:
+          type: string
+          example: Mira Voss
+        cargo:
+          type: string
+          example: titanium_alloy_billets
+
+    ShipState:
+      type: object
+      required: [ship_id, name, faction, ship_type, home_station_id, status, in_transit, ship_age_days, updated_at]
+      properties:
+        ship_id:
+          type: string
+          example: SHIP-00042
+        name:
+          type: string
+          example: Iron Pioneer
+        faction:
+          type: string
+          enum: [merchant, government, military, bounty_hunter]
+        ship_type:
+          type: string
+          example: Freighter
+        home_station_id:
+          type: string
+          example: STN-MOON-TITAN
+        status:
+          type: string
+          enum: [active, decommissioned, destroyed]
+        current_station_id:
+          type: [string, "null"]
+          example: STN-PLANET-MARS
+        in_transit:
+          type: integer
+          enum: [0, 1]
+        source_station_id:
+          type: [string, "null"]
+          example: STN-MOON-TITAN
+        destination_station_id:
+          type: [string, "null"]
+          example: STN-PLANET-EARTH
+        departure_time:
+          type: [string, "null"]
+          format: date-time
+        est_arrival_time:
+          type: [string, "null"]
+          format: date-time
+        ship_age_days:
+          type: number
+          format: float
+          example: 1482.5
+        updated_at:
+          type: string
+          format: date-time
+
+    Departure:
+      type: object
+      required: [id, event_uid, departure_time, malformed, fault_flags]
+      properties:
+        id:
+          type: integer
+          description: Auto-incrementing row ID. Use as cursor for polling.
+          example: 1024
+        event_uid:
+          type: string
+          example: EVT-20150101-0042-SHIP-00042
+        departure_time:
+          type: string
+          format: date-time
+        ship_id:
+          type: [string, "null"]
+          example: SHIP-00042
+        source_station_id:
+          type: [string, "null"]
+          example: STN-MOON-TITAN
+        destination_station_id:
+          type: [string, "null"]
+          example: STN-PLANET-EARTH
+        est_arrival_time:
+          type: [string, "null"]
+          format: date-time
+        scenario:
+          type: [string, "null"]
+          description: Active scenario name at time of departure, or null.
+          example: war
+        fault_flags:
+          type: array
+          items:
+            type: string
+          description: List of active fault types that affected this event.
+          example: []
+        malformed:
+          type: boolean
+          description: True if the payload field was intentionally corrupted by fault injection.
+        payload:
+          description: Full structured departure payload, or null/corrupt string if malformed.
+
+    ControlEvent:
+      type: object
+      required: [id, event_time, event_type, action, payload]
+      properties:
+        id:
+          type: integer
+          description: Auto-incrementing row ID. Use as cursor for polling.
+          example: 7
+        event_time:
+          type: string
+          format: date-time
+        event_type:
+          type: string
+          enum: [control, scenario, fault, lifecycle, pirate]
+          example: scenario
+        action:
+          type: string
+          example: activated
+        payload:
+          type: object
+          description: Event-specific details (scenario config, fault names, reset seed, etc.).
+
+    Counts:
+      type: object
+      required: [stations, ships, ships_in_transit, departures, control_events]
+      properties:
+        stations:
+          type: integer
+          example: 40
+        ships:
+          type: integer
+          example: 500
+        ships_in_transit:
+          type: integer
+          example: 38
+        departures:
+          type: integer
+          example: 14203
+        control_events:
+          type: integer
+          example: 12
+
+    ActiveScenario:
+      type: [object, "null"]
+      properties:
+        name:
+          type: string
+          enum: [war, shortage, solar_flare]
+        intensity:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 5.0
+          example: 1.5
+        duration_seconds:
+          type: integer
+          example: 300
+        scope:
+          type: object
+          properties:
+            type:
+              type: string
+              enum: [global, region]
+        started_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+
+    FaultEntry:
+      type: object
+      required: [rate, scope, duration_seconds, started_at]
+      properties:
+        rate:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          example: 0.2
+        scope:
+          type: object
+        duration_seconds:
+          type: integer
+          example: 300
+        started_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: [string, "null"]
+          format: date-time
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          example: unknown scenario 'blastoff'
+
+    PaginatedMeta:
+      type: object
+      required: [count, total_count, offset, limit]
+      properties:
+        count:
+          type: integer
+          description: Number of items in this response.
+        total_count:
+          type: integer
+          description: Total matching items across all pages.
+        offset:
+          type: integer
+        limit:
+          type: integer
+
+paths:
+  /healthz:
+    get:
+      operationId: getHealth
+      summary: Health check
+      description: Returns server status and aggregate resource counts. No authentication required.
+      security: []
+      tags: [health]
+      responses:
+        "200":
+          description: Server is healthy.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, server_time, counts, db_size_bytes, db_max_size_bytes]
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  server_time:
+                    type: string
+                    format: date-time
+                  counts:
+                    $ref: "#/components/schemas/Counts"
+                  active_scenario:
+                    $ref: "#/components/schemas/ActiveScenario"
+                  active_faults:
+                    type: object
+                    additionalProperties:
+                      $ref: "#/components/schemas/FaultEntry"
+                  deterministic_mode:
+                    type: boolean
+                  db_size_bytes:
+                    type: integer
+                    example: 10485760
+                  db_max_size_bytes:
+                    type: integer
+                    example: 536870912
+
+  /openapi.yaml:
+    get:
+      operationId: getOpenApiSpec
+      summary: OpenAPI specification
+      description: Returns this OpenAPI 3.1 YAML spec. No authentication required.
+      security: []
+      tags: [health]
+      responses:
+        "200":
+          description: OpenAPI YAML document.
+          content:
+            application/yaml:
+              schema:
+                type: string
+
+  /stations:
+    get:
+      operationId: listStations
+      summary: List stations
+      description: |
+        Returns station registry entries with optional filtering and pagination.
+        40 stations total: one per planet, moon, and major asteroid.
+      tags: [domain-data]
+      parameters:
+        - name: body_type
+          in: query
+          schema:
+            type: string
+            enum: [planet, moon, asteroid]
+          description: Filter by body type.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5000
+            default: 1000
+        - $ref: "#/components/parameters/OffsetParam"
+        - name: order_by
+          in: query
+          schema:
+            type: string
+            enum: [id, name, body_name, body_type, parent_body]
+            default: body_type
+        - $ref: "#/components/parameters/OrderParam"
+      responses:
+        "200":
+          description: Paginated station list.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedMeta"
+                  - type: object
+                    required: [stations]
+                    properties:
+                      stations:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Station"
+        "401":
+          description: Missing or invalid API key.
+
+  /ships:
+    get:
+      operationId: listShips
+      summary: List ships
+      description: |
+        Returns ship registry entries with optional filtering and offset pagination.
+        500 ships across merchant, government, military, and bounty_hunter factions.
+      tags: [domain-data]
+      parameters:
+        - name: faction
+          in: query
+          schema:
+            type: string
+            enum: [merchant, government, military, bounty_hunter]
+        - name: home_station_id
+          in: query
+          schema:
+            type: string
+          example: STN-MOON-TITAN
+        - name: cargo
+          in: query
+          schema:
+            type: string
+          example: titanium_alloy_billets
+        - name: ship_type
+          in: query
+          schema:
+            type: string
+          example: Freighter
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5000
+            default: 1000
+        - $ref: "#/components/parameters/OffsetParam"
+        - name: order_by
+          in: query
+          schema:
+            type: string
+            enum: [id, name, faction, ship_type, cargo, home_station_id, size_class]
+            default: id
+        - $ref: "#/components/parameters/OrderParam"
+      responses:
+        "200":
+          description: Paginated ship list.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedMeta"
+                  - type: object
+                    required: [ships]
+                    properties:
+                      ships:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Ship"
+        "401":
+          description: Missing or invalid API key.
+
+  /ships/state:
+    get:
+      operationId: listShipStates
+      summary: List live ship states
+      description: |
+        Returns current operational state for each ship, including transit status, position,
+        and age. Joins the ship registry with the live state table.
+      tags: [domain-data]
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, decommissioned, destroyed]
+          description: Filter by status.
+        - name: in_transit
+          in: query
+          schema:
+            type: string
+            enum: ["0", "1", "true", "false", "yes", "no"]
+          description: Filter to ships currently in transit (truthy) or docked (falsy).
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5000
+            default: 500
+      responses:
+        "200":
+          description: Ship state list.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ships, count]
+                properties:
+                  ships:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ShipState"
+                  count:
+                    type: integer
+        "401":
+          description: Missing or invalid API key.
+
+  /stats:
+    get:
+      operationId: getStats
+      summary: Aggregate statistics
+      description: |
+        Returns fleet-wide aggregate counts grouped by faction, ship type, cargo, and ship state,
+        along with current pirate strength and active scenario.
+      tags: [domain-data]
+      responses:
+        "200":
+          description: Aggregate statistics.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [summary, factions, ship_types, cargo_types, ship_states, pirate_strength]
+                properties:
+                  summary:
+                    $ref: "#/components/schemas/Counts"
+                  factions:
+                    type: object
+                    description: Ship count keyed by faction name.
+                    additionalProperties:
+                      type: integer
+                    example:
+                      merchant: 180
+                      government: 75
+                      military: 60
+                      bounty_hunter: 185
+                  ship_types:
+                    type: object
+                    description: Ship count keyed by ship_type.
+                    additionalProperties:
+                      type: integer
+                    example:
+                      Freighter: 62
+                      Frigate: 30
+                  cargo_types:
+                    type: object
+                    description: Ship count keyed by primary cargo type.
+                    additionalProperties:
+                      type: integer
+                  ship_states:
+                    type: object
+                    description: Ship count keyed by status.
+                    additionalProperties:
+                      type: integer
+                    example:
+                      active: 497
+                      decommissioned: 3
+                  pirate_strength:
+                    type: number
+                    format: float
+                    minimum: 0.0
+                    maximum: 1.0
+                    example: 0.82
+                  active_scenario:
+                    $ref: "#/components/schemas/ActiveScenario"
+        "401":
+          description: Missing or invalid API key.
+
+  /departures:
+    get:
+      operationId: listDepartures
+      summary: Poll departure events
+      description: |
+        Cursor-based polling endpoint for departure events. On first call omit `since_id`
+        to get the latest `limit` events. On subsequent calls pass the returned `next_since_id`
+        to receive only newer events.
+      tags: [events]
+      parameters:
+        - $ref: "#/components/parameters/SinceIdParam"
+        - name: since_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Return only departures with departure_time >= this value. Ignored if since_id is set.
+        - $ref: "#/components/parameters/LimitParam"
+        - $ref: "#/components/parameters/OrderParam"
+      responses:
+        "200":
+          description: Departure event page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [departures, count, next_since_id]
+                properties:
+                  departures:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Departure"
+                  count:
+                    type: integer
+                  next_since_id:
+                    type: [integer, "null"]
+                    description: Pass as since_id on your next call to get only new events.
+        "401":
+          description: Missing or invalid API key.
+
+  /departures/stream:
+    get:
+      operationId: streamDepartures
+      summary: Stream departure events (SSE)
+      description: |
+        Server-Sent Events stream. Emits `event: departure` for each new departure as it is
+        generated. Sends `: keepalive` comments every 10 seconds when idle.
+
+        ```
+        event: departure
+        data: {"id": 1025, "event_uid": "...", ...}
+        ```
+      tags: [events]
+      responses:
+        "200":
+          description: SSE stream (keep-alive connection).
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "401":
+          description: Missing or invalid API key.
+
+  /control-events:
+    get:
+      operationId: listControlEvents
+      summary: Poll control-plane events
+      description: |
+        Cursor-based polling for control-plane changes (scenario activations, fault toggles,
+        resets, lifecycle events, pirate activity). Useful for correlating data anomalies with
+        API control actions.
+      tags: [events]
+      parameters:
+        - $ref: "#/components/parameters/SinceIdParam"
+        - $ref: "#/components/parameters/LimitParam"
+        - $ref: "#/components/parameters/OrderParam"
+      responses:
+        "200":
+          description: Control event page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [control_events, count, next_since_id]
+                properties:
+                  control_events:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ControlEvent"
+                  count:
+                    type: integer
+                  next_since_id:
+                    type: [integer, "null"]
+        "401":
+          description: Missing or invalid API key.
+
+  /control-events/stream:
+    get:
+      operationId: streamControlEvents
+      summary: Stream control-plane events (SSE)
+      description: |
+        Server-Sent Events stream for control-plane changes.
+        Emits `event: control_event` for each control change.
+
+        ```
+        event: control_event
+        data: {"id": 8, "event_type": "scenario", "action": "activated", ...}
+        ```
+      tags: [events]
+      responses:
+        "200":
+          description: SSE stream (keep-alive connection).
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "401":
+          description: Missing or invalid API key.
+
+  /config:
+    get:
+      operationId: getConfig
+      summary: Get runtime configuration
+      description: |
+        Returns the full runtime snapshot including base event rates, deterministic mode,
+        active scenario, active faults, pirate event state, and the
+        `effective_lifecycle` / `effective_ship_generation` configs resolved for the
+        current scenario.
+      tags: [control]
+      responses:
+        "200":
+          description: Runtime snapshot.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  base_min_events_per_minute:
+                    type: number
+                  base_max_events_per_minute:
+                    type: number
+                  deterministic_mode:
+                    type: boolean
+                  deterministic_seed:
+                    type: [integer, "null"]
+                  retention_max_rows:
+                    type: integer
+                  db_max_size_mb:
+                    type: integer
+                  active_scenario:
+                    $ref: "#/components/schemas/ActiveScenario"
+                  active_faults:
+                    type: object
+                    additionalProperties:
+                      $ref: "#/components/schemas/FaultEntry"
+                  pirate_event:
+                    type: object
+                    properties:
+                      active:
+                        type: boolean
+                      anchor_body:
+                        type: [string, "null"]
+                      strength:
+                        type: number
+                      started_at:
+                        type: [string, "null"]
+                        format: date-time
+                      affected_station_ids:
+                        type: array
+                        items:
+                          type: string
+                  effective_lifecycle:
+                    type: object
+                    description: Lifecycle config merged with any active scenario overrides.
+                  effective_ship_generation:
+                    type: object
+                    description: Ship generation config merged with any active scenario overrides.
+        "401":
+          description: Missing or invalid API key.
+
+    patch:
+      operationId: patchConfig
+      summary: Update runtime configuration
+      description: |
+        Patch writable runtime parameters. All fields are optional.
+
+        | Field | Type | Range | Notes |
+        |---|---|---|---|
+        | `deterministic_mode` | boolean | — | Toggles deterministic replay |
+        | `deterministic_seed` | integer | — | RNG seed for deterministic mode |
+        | `db_max_size_mb` | integer | ≥ 50 | Cap for SQLite file size |
+      tags: [control]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                deterministic_mode:
+                  type: boolean
+                deterministic_seed:
+                  type: integer
+                db_max_size_mb:
+                  type: integer
+                  minimum: 50
+            example:
+              deterministic_mode: true
+              deterministic_seed: 1337
+      responses:
+        "200":
+          description: Updated runtime snapshot (same schema as GET /config).
+        "401":
+          description: Missing or invalid API key.
+
+  /scenarios:
+    get:
+      operationId: listScenarios
+      summary: List available scenarios
+      description: Returns all defined scenarios and the currently active one.
+      tags: [control]
+      responses:
+        "200":
+          description: Scenario list.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [available, active]
+                properties:
+                  available:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, description, rate_multiplier]
+                      properties:
+                        name:
+                          type: string
+                          enum: [war, shortage, solar_flare]
+                        description:
+                          type: string
+                        rate_multiplier:
+                          type: number
+                          description: Multiplier applied to the base departure rate.
+                  active:
+                    $ref: "#/components/schemas/ActiveScenario"
+        "401":
+          description: Missing or invalid API key.
+
+  /scenarios/activate:
+    post:
+      operationId: activateScenario
+      summary: Activate a scenario
+      description: |
+        Activates a named scenario for the specified duration. Any previously active scenario
+        is replaced immediately.
+
+        **Available scenarios:**
+        - `war` — Military surge (3× event rate). Increased war_impact losses, reduced build queue.
+        - `shortage` — Merchant hauling spike (2.2× rate). Elevated builds, reduced conflict.
+        - `solar_flare` — Traffic halt (0× rate), increased decommissioning, paused conflict.
+      tags: [control]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  enum: [war, shortage, solar_flare]
+                intensity:
+                  type: number
+                  format: float
+                  minimum: 0.0
+                  maximum: 5.0
+                  default: 1.0
+                  description: Scales scenario effects. 1.0 = nominal, 5.0 = extreme.
+                duration_seconds:
+                  type: integer
+                  minimum: 1
+                  default: 300
+                scope:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                      enum: [global, region]
+                      default: global
+            example:
+              name: war
+              intensity: 1.5
+              duration_seconds: 300
+              scope:
+                type: global
+      responses:
+        "200":
+          description: Active scenario state.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [active_scenario]
+                properties:
+                  active_scenario:
+                    $ref: "#/components/schemas/ActiveScenario"
+        "400":
+          description: Unknown scenario name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key.
+
+  /scenarios/deactivate:
+    post:
+      operationId: deactivateScenario
+      summary: Deactivate the current scenario
+      tags: [control]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Scenario cleared.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active_scenario:
+                    type: "null"
+        "401":
+          description: Missing or invalid API key.
+
+  /faults:
+    get:
+      operationId: listFaults
+      summary: List available fault injections
+      description: Returns all defined fault types and currently active faults.
+      tags: [control]
+      responses:
+        "200":
+          description: Fault list.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [available, active]
+                properties:
+                  available:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, description, default_rate]
+                      properties:
+                        name:
+                          type: string
+                          enum:
+                            - malformed_payload
+                            - missing_field
+                            - invalid_enum
+                            - out_of_order_timestamp
+                            - delayed_insert
+                            - duplicate_event_uid
+                            - synthetic_error
+                        description:
+                          type: string
+                        default_rate:
+                          type: number
+                  active:
+                    type: object
+                    additionalProperties:
+                      $ref: "#/components/schemas/FaultEntry"
+        "401":
+          description: Missing or invalid API key.
+
+  /faults/activate:
+    post:
+      operationId: activateFaults
+      summary: Activate fault injections
+      description: |
+        Enables one or more fault types. Multiple faults can be active simultaneously.
+
+        **Available faults:**
+        | Name | Default rate | Description |
+        |---|---|---|
+        | `malformed_payload` | 0.02 | Corrupt the `payload` field to invalid JSON |
+        | `missing_field` | 0.03 | Drop required fields from the event payload |
+        | `invalid_enum` | 0.02 | Inject invalid enum values |
+        | `out_of_order_timestamp` | 0.02 | Skew `departure_time` backwards |
+        | `delayed_insert` | 0.03 | Delay a subset of events before persisting |
+        | `duplicate_event_uid` | 0.01 | Reuse a previous `event_uid` |
+        | `synthetic_error` | 0.01 | Emit error-shaped records |
+      tags: [control]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [faults]
+              properties:
+                faults:
+                  type: object
+                  description: Key is fault name; value is fault config.
+                  additionalProperties:
+                    type: object
+                    properties:
+                      rate:
+                        type: number
+                        format: float
+                        minimum: 0.0
+                        maximum: 1.0
+                        description: Fraction of events affected. Defaults to fault's default_rate.
+                      duration_seconds:
+                        type: integer
+                        minimum: 0
+                        default: 0
+                        description: Seconds before auto-deactivation. 0 = indefinite.
+                      scope:
+                        type: object
+                        default:
+                          type: global
+            example:
+              faults:
+                out_of_order_timestamp:
+                  rate: 0.2
+                  duration_seconds: 120
+                malformed_payload:
+                  rate: 0.1
+      responses:
+        "200":
+          description: Active faults after update.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [active_faults]
+                properties:
+                  active_faults:
+                    type: object
+                    additionalProperties:
+                      $ref: "#/components/schemas/FaultEntry"
+        "400":
+          description: Unknown fault name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key.
+
+  /faults/deactivate:
+    post:
+      operationId: deactivateFaults
+      summary: Deactivate fault injections
+      description: |
+        Deactivates specified faults. If `names` is omitted, all active faults are cleared.
+      tags: [control]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                names:
+                  type: array
+                  items:
+                    type: string
+                  description: Fault names to deactivate. Omit to clear all.
+            example:
+              names:
+                - malformed_payload
+      responses:
+        "200":
+          description: Active faults after update.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [active_faults]
+                properties:
+                  active_faults:
+                    type: object
+        "400":
+          description: names field is not an array.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key.
+
+  /control/reset:
+    post:
+      operationId: controlReset
+      summary: Reset simulation state
+      description: |
+        Clears all departure and ship-state history and resets ship positions to home stations.
+        If `seed` is provided and deterministic mode is enabled, the RNG is re-seeded.
+
+        Combine with `PATCH /config` to set up a clean deterministic replay baseline:
+        ```
+        PATCH /config  {"deterministic_mode": true, "deterministic_seed": 1337}
+        POST  /control/reset  {"seed": 1337}
+        ```
+      tags: [control]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                seed:
+                  type: integer
+                  description: Optional seed to apply on reset.
+            example:
+              seed: 1337
+      responses:
+        "200":
+          description: Reset confirmation with updated runtime state.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, runtime]
+                properties:
+                  status:
+                    type: string
+                    example: reset
+                  runtime:
+                    type: object
+                    description: Runtime snapshot after reset.
+        "401":
+          description: Missing or invalid API key.
+
+tags:
+  - name: health
+    description: Server status and spec discovery
+  - name: domain-data
+    description: Static registry (stations, ships) and aggregate stats
+  - name: events
+    description: Departure events — polling and SSE streaming
+  - name: control
+    description: Runtime configuration, scenario bursts, fault injection, and reset

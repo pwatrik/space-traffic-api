@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import pathlib
 import queue
 import time
 from datetime import UTC, datetime
@@ -20,6 +21,16 @@ def create_api_blueprint(
 ) -> Blueprint:
     bp = Blueprint("api", __name__)
     guard = require_api_key(api_key)
+
+    _OPENAPI_PATH = pathlib.Path(__file__).parent.parent.parent.parent / "docs" / "openapi.yaml"
+
+    @bp.get("/openapi.yaml")
+    def openapi_spec() -> Response:
+        try:
+            content = _OPENAPI_PATH.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return Response("OpenAPI spec not found.", status=404, mimetype="text/plain")
+        return Response(content, mimetype="application/yaml")
 
     @bp.get("/healthz")
     def healthz() -> Response:
