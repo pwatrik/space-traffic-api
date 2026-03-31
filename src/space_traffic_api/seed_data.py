@@ -282,9 +282,36 @@ def build_ships(
 
 
 def station_distance_groups(stations: list[dict[str, Any]], catalog_path: str | None = None) -> dict[str, int]:
-    catalog = load_seed_catalog(catalog_path)
-    order = catalog["celestial"]["distance_order"]
+    """
+    Compute distance groups for stations based solely on the provided station data.
+
+    The optional ``catalog_path`` parameter is accepted for backwards compatibility
+    but is ignored, so this function does not depend on any external catalog
+    configuration. This ensures consistent behavior even when custom catalogs
+    are used elsewhere in the application.
+    """
     grouping: dict[str, int] = {}
+    body_groups: dict[str, int] = {}
+    next_group = 0
+
     for row in stations:
-        grouping[row["id"]] = order.get(row["parent_body"], order.get(row["body_name"], 5))
+        station_id = row["id"]
+
+        # Prefer an explicit distance_group field if present.
+        explicit_group = row.get("distance_group")
+        if isinstance(explicit_group, int):
+            grouping[station_id] = explicit_group
+            continue
+
+        body = row.get("parent_body") or row.get("body_name")
+        if not body:
+            # Fallback group if no body information is available.
+            grouping[station_id] = 5
+            continue
+
+        if body not in body_groups:
+            body_groups[body] = next_group
+            next_group += 1
+
+        grouping[station_id] = body_groups[body]
     return grouping
