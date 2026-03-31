@@ -1,203 +1,269 @@
 from __future__ import annotations
 
+import json
 import random
+import re
+from pathlib import Path
 from typing import Any
 
-
-_PLANETS = [
-    "Mercury",
-    "Venus",
-    "Earth",
-    "Mars",
-    "Jupiter",
-    "Saturn",
-    "Uranus",
-    "Neptune",
-    "Pluto",
-]
-
-_MOONS = [
-    ("Moon", "Earth"),
-    ("Phobos", "Mars"),
-    ("Deimos", "Mars"),
-    ("Io", "Jupiter"),
-    ("Europa", "Jupiter"),
-    ("Ganymede", "Jupiter"),
-    ("Callisto", "Jupiter"),
-    ("Titan", "Saturn"),
-    ("Enceladus", "Saturn"),
-    ("Rhea", "Saturn"),
-    ("Dione", "Saturn"),
-    ("Iapetus", "Saturn"),
-    ("Mimas", "Saturn"),
-    ("Tethys", "Saturn"),
-    ("Miranda", "Uranus"),
-    ("Ariel", "Uranus"),
-    ("Umbriel", "Uranus"),
-    ("Titania", "Uranus"),
-    ("Oberon", "Uranus"),
-    ("Triton", "Neptune"),
-    ("Charon", "Pluto"),
-]
-
-_ASTEROIDS = [
-    "Ceres",
-    "Vesta",
-    "Pallas",
-    "Hygiea",
-    "Eros",
-    "Psyche",
-    "Juno",
-    "Davida",
-    "Interamnia",
-    "Europa-Asteroid",
-]
-
-_MERCHANT_SHIP_TYPES = ["Freighter", "Bulk Carrier", "Tanker", "Courier", "Passenger Liner"]
-_GOVERNMENT_SHIP_TYPES = ["Surveyor", "Diplomatic Transport", "Research Vessel", "Colony Support"]
-_MILITARY_SHIP_TYPES = ["Destroyer", "Frigate", "Interceptor", "Carrier", "Recon Cruiser"]
-
-_CARGO_TYPES = [
-    "rare_earth_metals",
-    "foodstuffs",
-    "cryogenic_fuel",
-    "medical_supplies",
-    "consumer_goods",
-    "reactor_parts",
-    "water_ice",
-    "helium-3",
-    "construction_materials",
-    "defense_systems",
-]
+def _default_catalog_path() -> Path:
+    return Path(__file__).resolve().parent / "data" / "catalog_config.json"
 
 
-_ADJECTIVES = [
-    "Aurora",
-    "Crimson",
-    "Silent",
-    "Iron",
-    "Emerald",
-    "Solar",
-    "Vigilant",
-    "Endless",
-    "Nebula",
-    "Radiant",
-    "Atlas",
-    "Frontier",
-    "Zenith",
-    "Orion",
-]
-
-_NOUNS = [
-    "Pioneer",
-    "Arrow",
-    "Harbor",
-    "Drift",
-    "Sentinel",
-    "Voyager",
-    "Mercy",
-    "Comet",
-    "Mariner",
-    "Falcon",
-    "Dawn",
-    "Vector",
-    "Relay",
-    "Nomad",
-]
-
-_CAPTAIN_FIRST = [
-    "Avery",
-    "Sloan",
-    "Kai",
-    "Morgan",
-    "Rin",
-    "Jordan",
-    "Harper",
-    "Rowan",
-    "Dakota",
-    "Elliot",
-    "Alex",
-    "Sam",
-]
-
-_CAPTAIN_LAST = [
-    "Voss",
-    "Kade",
-    "Shaw",
-    "Miro",
-    "Nolan",
-    "Vega",
-    "Drake",
-    "Ibarra",
-    "Sato",
-    "Rhee",
-    "Navarro",
-    "Petrov",
-]
+def _ensure_str_list(path: str, value: Any, *, min_items: int = 1) -> list[str]:
+    if not isinstance(value, list) or len(value) < min_items or not all(isinstance(item, str) and item for item in value):
+        if min_items > 0:
+            raise ValueError(f"{path} must be an array of strings with at least {min_items} item(s)")
+        raise ValueError(f"{path} must be an array of strings")
+    return list(value)
 
 
-def build_stations() -> list[dict[str, Any]]:
+def _sanitize_station_token(raw: str) -> str:
+    return re.sub(r"[^A-Z0-9_]+", "_", raw.upper()).strip("_")
+
+
+def load_seed_catalog(catalog_path: str | None = None) -> dict[str, Any]:
+    path = Path(catalog_path) if catalog_path else _default_catalog_path()
+    if not path.exists():
+        raise ValueError(f"seed catalog file does not exist: {path}")
+
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid seed catalog JSON at {path}: {exc}") from exc
+
+    if not isinstance(raw, dict):
+        raise ValueError("seed catalog root must be an object")
+
+    celestial = raw.get("celestial")
+    stations = raw.get("stations")
+    ship_generation = raw.get("ship_generation")
+    if not isinstance(celestial, dict):
+        raise ValueError("celestial must be an object")
+    if not isinstance(stations, dict):
+        raise ValueError("stations must be an object")
+    if not isinstance(ship_generation, dict):
+        raise ValueError("ship_generation must be an object")
+
+    planets = _ensure_str_list("celestial.planets", celestial.get("planets"), min_items=1)
+    asteroids = _ensure_str_list("celestial.asteroids", celestial.get("asteroids"), min_items=0)
+
+    moons_raw = celestial.get("moons")
+    if not isinstance(moons_raw, list):
+        raise ValueError("celestial.moons must be an array")
+    moons: list[dict[str, str]] = []
+    for idx, moon in enumerate(moons_raw):
+        if not isinstance(moon, dict):
+            raise ValueError(f"celestial.moons[{idx}] must be an object")
+        name = moon.get("name")
+        parent = moon.get("parent")
+        if not isinstance(name, str) or not name or not isinstance(parent, str) or not parent:
+            raise ValueError(f"celestial.moons[{idx}] must include non-empty name and parent")
+        moons.append({"name": name, "parent": parent})
+
+    distance_order = celestial.get("distance_order")
+    if not isinstance(distance_order, dict) or not distance_order:
+        raise ValueError("celestial.distance_order must be a non-empty object")
+    normalized_distance_order: dict[str, int] = {}
+    for key, value in distance_order.items():
+        if not isinstance(key, str) or not key:
+            raise ValueError("celestial.distance_order keys must be non-empty strings")
+        if not isinstance(value, int) or value < 0:
+            raise ValueError("celestial.distance_order values must be non-negative integers")
+        normalized_distance_order[key] = value
+
+    templates_raw = stations.get("templates")
+    if not isinstance(templates_raw, list) or not templates_raw:
+        raise ValueError("stations.templates must be a non-empty array")
+    station_templates: dict[str, dict[str, str]] = {}
+    for idx, template in enumerate(templates_raw):
+        if not isinstance(template, dict):
+            raise ValueError(f"stations.templates[{idx}] must be an object")
+        body_type = template.get("body_type")
+        id_prefix = template.get("id_prefix")
+        name_template = template.get("name_template")
+        if not isinstance(body_type, str) or not body_type:
+            raise ValueError(f"stations.templates[{idx}].body_type must be a non-empty string")
+        if not isinstance(id_prefix, str) or not id_prefix:
+            raise ValueError(f"stations.templates[{idx}].id_prefix must be a non-empty string")
+        if not isinstance(name_template, str) or "{body}" not in name_template:
+            raise ValueError(f"stations.templates[{idx}].name_template must include {{body}}")
+        parent_body_raw = template.get("parent_body")
+        if parent_body_raw is None:
+            parent_body = ""
+        elif isinstance(parent_body_raw, str):
+            parent_body = parent_body_raw
+        else:
+            raise ValueError(
+                f"stations.templates[{idx}].parent_body must be a string or null if present"
+            )
+        station_templates[body_type] = {
+            "id_prefix": id_prefix,
+            "name_template": name_template,
+            "parent_body": parent_body,
+        }
+
+    faction_distribution = ship_generation.get("faction_distribution")
+    if not isinstance(faction_distribution, dict) or not faction_distribution:
+        raise ValueError("ship_generation.faction_distribution must be a non-empty object")
+    normalized_distribution: dict[str, float] = {}
+    for faction, weight in faction_distribution.items():
+        if not isinstance(faction, str) or not faction:
+            raise ValueError("ship_generation.faction_distribution keys must be non-empty strings")
+        if not isinstance(weight, (int, float)) or float(weight) <= 0:
+            raise ValueError("ship_generation.faction_distribution values must be positive numbers")
+        normalized_distribution[faction] = float(weight)
+
+    ship_types_raw = ship_generation.get("ship_types")
+    if not isinstance(ship_types_raw, list) or not ship_types_raw:
+        raise ValueError("ship_generation.ship_types must be a non-empty array")
+    ship_types: list[dict[str, Any]] = []
+    for idx, row in enumerate(ship_types_raw):
+        if not isinstance(row, dict):
+            raise ValueError(f"ship_generation.ship_types[{idx}] must be an object")
+        name = row.get("name")
+        faction = row.get("faction")
+        if not isinstance(name, str) or not name:
+            raise ValueError(f"ship_generation.ship_types[{idx}].name must be a non-empty string")
+        if not isinstance(faction, str) or not faction:
+            raise ValueError(f"ship_generation.ship_types[{idx}].faction must be a non-empty string")
+        ship_types.append(dict(row))
+
+    naming = ship_generation.get("naming")
+    if not isinstance(naming, dict):
+        raise ValueError("ship_generation.naming must be an object")
+
+    defaults = ship_generation.get("defaults")
+    if not isinstance(defaults, dict):
+        raise ValueError("ship_generation.defaults must be an object")
+    ship_count = defaults.get("ship_count", 220)
+    ship_seed = defaults.get("ship_seed", 9001)
+    if not isinstance(ship_count, int) or ship_count < 1:
+        raise ValueError("ship_generation.defaults.ship_count must be a positive integer")
+    if not isinstance(ship_seed, int):
+        raise ValueError("ship_generation.defaults.ship_seed must be an integer")
+
+    return {
+        "celestial": {
+            "planets": planets,
+            "moons": moons,
+            "asteroids": asteroids,
+            "distance_order": normalized_distance_order,
+        },
+        "stations": {
+            "templates": station_templates,
+        },
+        "ship_generation": {
+            "faction_distribution": normalized_distribution,
+            "ship_types": ship_types,
+            "cargo_types": _ensure_str_list("ship_generation.cargo_types", ship_generation.get("cargo_types"), min_items=1),
+            "naming": {
+                "adjectives": _ensure_str_list("ship_generation.naming.adjectives", naming.get("adjectives"), min_items=1),
+                "nouns": _ensure_str_list("ship_generation.naming.nouns", naming.get("nouns"), min_items=1),
+                "captain_first": _ensure_str_list("ship_generation.naming.captain_first", naming.get("captain_first"), min_items=1),
+                "captain_last": _ensure_str_list("ship_generation.naming.captain_last", naming.get("captain_last"), min_items=1),
+            },
+            "defaults": {
+                "ship_count": ship_count,
+                "ship_seed": ship_seed,
+            },
+        },
+    }
+
+
+def build_stations(catalog_path: str | None = None) -> list[dict[str, Any]]:
+    catalog = load_seed_catalog(catalog_path)
+    templates = catalog["stations"]["templates"]
     stations: list[dict[str, Any]] = []
 
-    for planet in _PLANETS:
-        sid = f"STN-PLANET-{planet.upper()}"
+    for planet in catalog["celestial"]["planets"]:
+        template = templates["planet"]
+        sid = f"{template['id_prefix']}-{_sanitize_station_token(planet)}"
         stations.append(
             {
                 "id": sid,
-                "name": f"{planet} Prime Port",
+                "name": template["name_template"].format(body=planet),
                 "body_name": planet,
                 "body_type": "planet",
                 "parent_body": planet,
             }
         )
 
-    for moon, parent in _MOONS:
-        sid = f"STN-MOON-{moon.upper().replace('-', '_')}"
+    for moon in catalog["celestial"]["moons"]:
+        moon_name = moon["name"]
+        parent = moon["parent"]
+        template = templates["moon"]
+        sid = f"{template['id_prefix']}-{_sanitize_station_token(moon_name)}"
         stations.append(
             {
                 "id": sid,
-                "name": f"{moon} Orbital",
-                "body_name": moon,
+                "name": template["name_template"].format(body=moon_name),
+                "body_name": moon_name,
                 "body_type": "moon",
                 "parent_body": parent,
             }
         )
 
-    for asteroid in _ASTEROIDS:
-        sid = f"STN-AST-{asteroid.upper().replace('-', '_')}"
+    for asteroid in catalog["celestial"]["asteroids"]:
+        template = templates["asteroid"]
+        sid = f"{template['id_prefix']}-{_sanitize_station_token(asteroid)}"
         stations.append(
             {
                 "id": sid,
-                "name": f"{asteroid} Hub",
+                "name": template["name_template"].format(body=asteroid),
                 "body_name": asteroid,
                 "body_type": "asteroid",
-                "parent_body": "Asteroid Belt",
+                "parent_body": template["parent_body"] or "Asteroid Belt",
             }
         )
 
     return stations
 
 
-def build_ships(stations: list[dict[str, Any]], count: int = 220, seed: int = 1001) -> list[dict[str, Any]]:
+def _pick_faction(rng: random.Random, faction_distribution: dict[str, float]) -> str:
+    total = sum(faction_distribution.values())
+    threshold = rng.random() * total
+    running = 0.0
+    for faction, weight in faction_distribution.items():
+        running += weight
+        if threshold <= running:
+            return faction
+    return next(iter(faction_distribution))
+
+
+def build_ships(
+    stations: list[dict[str, Any]],
+    count: int | None = None,
+    seed: int | None = None,
+    catalog_path: str | None = None,
+) -> list[dict[str, Any]]:
+    catalog = load_seed_catalog(catalog_path)
+    ship_generation = catalog["ship_generation"]
+    defaults = ship_generation["defaults"]
+    ship_types_by_faction: dict[str, list[str]] = {}
+    for row in ship_generation["ship_types"]:
+        ship_types_by_faction.setdefault(row["faction"], []).append(row["name"])
+
+    if count is None:
+        count = int(defaults["ship_count"])
+    if seed is None:
+        seed = int(defaults["ship_seed"])
+
     rng = random.Random(seed)
     ships: list[dict[str, Any]] = []
     station_ids = [row["id"] for row in stations]
+    naming = ship_generation["naming"]
 
     for i in range(1, count + 1):
-        faction_roll = rng.random()
-        if faction_roll < 0.60:
-            faction = "merchant"
-            ship_type = rng.choice(_MERCHANT_SHIP_TYPES)
-        elif faction_roll < 0.85:
-            faction = "government"
-            ship_type = rng.choice(_GOVERNMENT_SHIP_TYPES)
-        else:
-            faction = "military"
-            ship_type = rng.choice(_MILITARY_SHIP_TYPES)
+        faction = _pick_faction(rng, ship_generation["faction_distribution"])
+        ship_type_options = ship_types_by_faction.get(faction)
+        if not ship_type_options:
+            ship_type_options = [row["name"] for row in ship_generation["ship_types"]]
+        ship_type = rng.choice(ship_type_options)
 
-        ship_name = f"{rng.choice(_ADJECTIVES)} {rng.choice(_NOUNS)}"
-        captain = f"{rng.choice(_CAPTAIN_FIRST)} {rng.choice(_CAPTAIN_LAST)}"
-        cargo = rng.choice(_CARGO_TYPES)
+        ship_name = f"{rng.choice(naming['adjectives'])} {rng.choice(naming['nouns'])}"
+        captain = f"{rng.choice(naming['captain_first'])} {rng.choice(naming['captain_last'])}"
+        cargo = rng.choice(ship_generation["cargo_types"])
 
         ships.append(
             {
@@ -215,20 +281,37 @@ def build_ships(stations: list[dict[str, Any]], count: int = 220, seed: int = 10
     return ships
 
 
-def station_distance_groups(stations: list[dict[str, Any]]) -> dict[str, int]:
-    order = {
-        "Mercury": 1,
-        "Venus": 2,
-        "Earth": 3,
-        "Mars": 4,
-        "Asteroid Belt": 5,
-        "Jupiter": 6,
-        "Saturn": 7,
-        "Uranus": 8,
-        "Neptune": 9,
-        "Pluto": 10,
-    }
+def station_distance_groups(stations: list[dict[str, Any]], catalog_path: str | None = None) -> dict[str, int]:
+    """
+    Compute distance groups for stations based solely on the provided station data.
+
+    The optional ``catalog_path`` parameter is accepted for backwards compatibility
+    but is ignored, so this function does not depend on any external catalog
+    configuration. This ensures consistent behavior even when custom catalogs
+    are used elsewhere in the application.
+    """
     grouping: dict[str, int] = {}
+    body_groups: dict[str, int] = {}
+    next_group = 0
+
     for row in stations:
-        grouping[row["id"]] = order.get(row["parent_body"], order.get(row["body_name"], 5))
+        station_id = row["id"]
+
+        # Prefer an explicit distance_group field if present.
+        explicit_group = row.get("distance_group")
+        if isinstance(explicit_group, int):
+            grouping[station_id] = explicit_group
+            continue
+
+        body = row.get("parent_body") or row.get("body_name")
+        if not body:
+            # Fallback group if no body information is available.
+            grouping[station_id] = 5
+            continue
+
+        if body not in body_groups:
+            body_groups[body] = next_group
+            next_group += 1
+
+        grouping[station_id] = body_groups[body]
     return grouping

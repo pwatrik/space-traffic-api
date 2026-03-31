@@ -4,7 +4,7 @@ import sqlite3
 import threading
 from typing import Any
 
-from .storage import CatalogRepository, ControlRepository, DepartureRepository, StorageContext
+from .storage import CatalogRepository, ControlRepository, DepartureRepository, FleetRepository, StorageContext
 
 
 class SQLiteStore:
@@ -16,6 +16,7 @@ class SQLiteStore:
         self.catalog = CatalogRepository(context)
         self.departures = DepartureRepository(context)
         self.control = ControlRepository(context)
+        self.fleet = FleetRepository(context)
 
     def init_schema(self) -> None:
         with self._context.lock:
@@ -39,6 +40,22 @@ class SQLiteStore:
                     captain_name TEXT NOT NULL,
                     cargo TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS ship_state (
+                    ship_id TEXT PRIMARY KEY,
+                    status TEXT NOT NULL,
+                    current_station_id TEXT,
+                    in_transit INTEGER NOT NULL DEFAULT 0,
+                    source_station_id TEXT,
+                    destination_station_id TEXT,
+                    departure_time TEXT,
+                    est_arrival_time TEXT,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(ship_id) REFERENCES ships(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_ship_state_in_transit ON ship_state(in_transit);
+                CREATE INDEX IF NOT EXISTS idx_ship_state_est_arrival_time ON ship_state(est_arrival_time);
 
                 CREATE TABLE IF NOT EXISTS departures (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,6 +101,9 @@ class SQLiteStore:
     def seed_ships(self, ships: list[dict[str, Any]]) -> None:
         self.catalog.seed_ships(ships)
 
+    def seed_ship_states(self, ships: list[dict[str, Any]]) -> None:
+        self.fleet.seed_ship_states(ships)
+
     def list_stations(self, body_type: str | None = None) -> list[dict[str, Any]]:
         return self.catalog.list_stations(body_type=body_type)
 
@@ -100,6 +120,39 @@ class SQLiteStore:
             cargo=cargo,
             ship_type=ship_type,
         )
+
+    def list_ship_states(
+        self,
+        status: str | None = None,
+        in_transit: bool | None = None,
+        limit: int = 1000,
+    ) -> list[dict[str, Any]]:
+        return self.fleet.list_ship_states(status=status, in_transit=in_transit, limit=limit)
+
+    def list_available_ships(self) -> list[dict[str, Any]]:
+        return self.fleet.list_available_ships()
+
+    def begin_ship_transit(
+        self,
+        ship_id: str,
+        source_station_id: str,
+        destination_station_id: str,
+        departure_time: str,
+        est_arrival_time: str,
+    ) -> bool:
+        return self.fleet.begin_transit(
+            ship_id=ship_id,
+            source_station_id=source_station_id,
+            destination_station_id=destination_station_id,
+            departure_time=departure_time,
+            est_arrival_time=est_arrival_time,
+        )
+
+    def complete_ship_arrivals(self, as_of_time: str) -> int:
+        return self.fleet.complete_arrivals(as_of_time)
+
+    def reset_ship_states(self) -> None:
+        self.fleet.reset_to_home_station()
 
     def insert_departure(self, event: dict[str, Any]) -> int:
         return self.departures.insert(event)
@@ -154,6 +207,7 @@ class SQLiteStore:
         return {
             "stations": self.catalog.count_stations(),
             "ships": self.catalog.count_ships(),
+            "ships_in_transit": self.fleet.count_in_transit(),
             "departures": self.departures.count(),
             "control_events": self.control.count_events(),
         }

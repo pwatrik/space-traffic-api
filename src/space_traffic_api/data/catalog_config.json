@@ -1,0 +1,185 @@
+{
+  "celestial": {
+    "planets": [
+      "Mercury",
+      "Venus",
+      "Earth",
+      "Mars",
+      "Jupiter",
+      "Saturn",
+      "Uranus",
+      "Neptune",
+      "Pluto"
+    ],
+    "moons": [
+      {"name": "Moon", "parent": "Earth"},
+      {"name": "Phobos", "parent": "Mars"},
+      {"name": "Deimos", "parent": "Mars"},
+      {"name": "Io", "parent": "Jupiter"},
+      {"name": "Europa", "parent": "Jupiter"},
+      {"name": "Ganymede", "parent": "Jupiter"},
+      {"name": "Callisto", "parent": "Jupiter"},
+      {"name": "Titan", "parent": "Saturn"},
+      {"name": "Enceladus", "parent": "Saturn"},
+      {"name": "Rhea", "parent": "Saturn"},
+      {"name": "Dione", "parent": "Saturn"},
+      {"name": "Iapetus", "parent": "Saturn"},
+      {"name": "Mimas", "parent": "Saturn"},
+      {"name": "Tethys", "parent": "Saturn"},
+      {"name": "Miranda", "parent": "Uranus"},
+      {"name": "Ariel", "parent": "Uranus"},
+      {"name": "Umbriel", "parent": "Uranus"},
+      {"name": "Titania", "parent": "Uranus"},
+      {"name": "Oberon", "parent": "Uranus"},
+      {"name": "Triton", "parent": "Neptune"},
+      {"name": "Charon", "parent": "Pluto"}
+    ],
+    "asteroids": [
+      "Ceres",
+      "Vesta",
+      "Pallas",
+      "Hygiea",
+      "Eros",
+      "Psyche",
+      "Juno",
+      "Davida",
+      "Interamnia",
+      "Europa-Asteroid"
+    ],
+    "distance_order": {
+      "Mercury": 1,
+      "Venus": 2,
+      "Earth": 3,
+      "Mars": 4,
+      "Asteroid Belt": 5,
+      "Jupiter": 6,
+      "Saturn": 7,
+      "Uranus": 8,
+      "Neptune": 9,
+      "Pluto": 10
+    }
+  },
+  "stations": {
+    "templates": [
+      {
+        "body_type": "planet",
+        "id_prefix": "STN-PLANET",
+        "name_template": "{body} Prime Port"
+      },
+      {
+        "body_type": "moon",
+        "id_prefix": "STN-MOON",
+        "name_template": "{body} Orbital"
+      },
+      {
+        "body_type": "asteroid",
+        "id_prefix": "STN-AST",
+        "name_template": "{body} Hub",
+        "parent_body": "Asteroid Belt"
+      }
+    ]
+  },
+  "ship_generation": {
+    "faction_distribution": {
+      "merchant": 0.6,
+      "government": 0.25,
+      "military": 0.15
+    },
+    "ship_types": [
+      {"name": "Freighter", "faction": "merchant", "size_class": "large", "speed_au_per_hour": 0.95, "crew_min": 18, "crew_max": 60},
+      {"name": "Bulk Carrier", "faction": "merchant", "size_class": "large", "speed_au_per_hour": 0.82, "crew_min": 24, "crew_max": 74},
+      {"name": "Tanker", "faction": "merchant", "size_class": "large", "speed_au_per_hour": 0.78, "crew_min": 28, "crew_max": 82},
+      {"name": "Courier", "faction": "merchant", "size_class": "small", "speed_au_per_hour": 1.45, "crew_min": 4, "crew_max": 15},
+      {"name": "Passenger Liner", "faction": "merchant", "size_class": "large", "speed_au_per_hour": 1.1, "crew_min": 35, "crew_max": 140},
+
+      {"name": "Surveyor", "faction": "government", "size_class": "medium", "speed_au_per_hour": 1.12, "crew_min": 14, "crew_max": 36},
+      {"name": "Diplomatic Transport", "faction": "government", "size_class": "medium", "speed_au_per_hour": 1.05, "crew_min": 10, "crew_max": 30},
+      {"name": "Research Vessel", "faction": "government", "size_class": "medium", "speed_au_per_hour": 0.98, "crew_min": 18, "crew_max": 48},
+      {"name": "Colony Support", "faction": "government", "size_class": "large", "speed_au_per_hour": 0.88, "crew_min": 40, "crew_max": 150},
+
+      {"name": "Destroyer", "faction": "military", "size_class": "large", "speed_au_per_hour": 1.3, "crew_min": 120, "crew_max": 320},
+      {"name": "Frigate", "faction": "military", "size_class": "medium", "speed_au_per_hour": 1.44, "crew_min": 70, "crew_max": 160},
+      {"name": "Interceptor", "faction": "military", "size_class": "small", "speed_au_per_hour": 1.7, "crew_min": 12, "crew_max": 32},
+      {"name": "Carrier", "faction": "military", "size_class": "xlarge", "speed_au_per_hour": 0.92, "crew_min": 380, "crew_max": 1200},
+      {"name": "Recon Cruiser", "faction": "military", "size_class": "medium", "speed_au_per_hour": 1.35, "crew_min": 85, "crew_max": 220}
+    ],
+    "cargo_types": [
+      "rare_earth_metals",
+      "foodstuffs",
+      "cryogenic_fuel",
+      "medical_supplies",
+      "consumer_goods",
+      "reactor_parts",
+      "water_ice",
+      "helium-3",
+      "construction_materials",
+      "defense_systems"
+    ],
+    "naming": {
+      "adjectives": [
+        "Aurora",
+        "Crimson",
+        "Silent",
+        "Iron",
+        "Emerald",
+        "Solar",
+        "Vigilant",
+        "Endless",
+        "Nebula",
+        "Radiant",
+        "Atlas",
+        "Frontier",
+        "Zenith",
+        "Orion"
+      ],
+      "nouns": [
+        "Pioneer",
+        "Arrow",
+        "Harbor",
+        "Drift",
+        "Sentinel",
+        "Voyager",
+        "Mercy",
+        "Comet",
+        "Mariner",
+        "Falcon",
+        "Dawn",
+        "Vector",
+        "Relay",
+        "Nomad"
+      ],
+      "captain_first": [
+        "Avery",
+        "Sloan",
+        "Kai",
+        "Morgan",
+        "Rin",
+        "Jordan",
+        "Harper",
+        "Rowan",
+        "Dakota",
+        "Elliot",
+        "Alex",
+        "Sam"
+      ],
+      "captain_last": [
+        "Voss",
+        "Kade",
+        "Shaw",
+        "Miro",
+        "Nolan",
+        "Vega",
+        "Drake",
+        "Ibarra",
+        "Sato",
+        "Rhee",
+        "Navarro",
+        "Petrov"
+      ]
+    },
+    "defaults": {
+      "ship_count": 220,
+      "ship_seed": 9001
+    }
+  }
+}

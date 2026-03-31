@@ -16,11 +16,12 @@ def create_app() -> Flask:
     store = SQLiteStore(config.db_path)
     store.init_schema()
 
-    stations = build_stations()
-    ships = build_ships(stations=stations, count=220, seed=9001)
+    stations = build_stations(catalog_path=config.seed_catalog_path)
+    ships = build_ships(stations=stations, catalog_path=config.seed_catalog_path)
 
     store.seed_stations(stations)
     store.seed_ships(ships)
+    store.seed_ship_states(ships)
 
     simulation = SimulationService(config=config, store=store, stations=stations, ships=ships)
     if not config.disable_generator:

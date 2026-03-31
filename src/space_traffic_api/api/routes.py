@@ -57,6 +57,18 @@ def create_api_blueprint(
         )
         return jsonify({"ships": rows, "count": len(rows)})
 
+    @bp.get("/ships/state")
+    @guard
+    def ship_states() -> Response:
+        status = request.args.get("status")
+        in_transit_raw = request.args.get("in_transit")
+        in_transit: bool | None = None
+        if in_transit_raw is not None:
+            in_transit = in_transit_raw.strip().lower() in {"1", "true", "yes", "on"}
+        limit = min(5000, max(1, request.args.get("limit", default=500, type=int)))
+        rows = store.list_ship_states(status=status, in_transit=in_transit, limit=limit)
+        return jsonify({"ships": rows, "count": len(rows)})
+
     @bp.get("/departures")
     @guard
     def departures() -> Response:
@@ -205,6 +217,7 @@ def create_api_blueprint(
         seed = payload.get("seed")
         runtime_state = simulation.reset(seed=seed)
         store.reset_departures()
+        store.reset_ship_states()
         return jsonify({"status": "reset", "runtime": runtime_state})
 
     return bp
