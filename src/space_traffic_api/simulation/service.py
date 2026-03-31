@@ -42,7 +42,9 @@ class SimulationService:
         return self._generator.is_alive()
 
     def snapshot(self) -> dict[str, Any]:
-        return self._runtime.snapshot()
+        state = self._runtime.snapshot()
+        state["effective_lifecycle"] = self._generator.effective_lifecycle_config(state.get("active_scenario"))
+        return state
 
     def patch_config(self, patch: dict[str, Any]) -> dict[str, Any]:
         return self._runtime.patch_config(patch)

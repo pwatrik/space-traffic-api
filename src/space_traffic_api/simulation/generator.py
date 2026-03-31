@@ -138,6 +138,15 @@ class DepartureGenerator(threading.Thread):
             if q in self._subscribers:
                 self._subscribers.remove(q)
 
+    def effective_lifecycle_config(self, scenario: dict[str, Any] | None) -> dict[str, Any]:
+        scenario_definition = SCENARIO_DEFINITIONS.get((scenario or {}).get("name", ""), {})
+        intensity = float((scenario or {}).get("intensity", 1.0))
+        return build_effective_lifecycle_config(
+            base_lifecycle=self._lifecycle,
+            scenario_definition=scenario_definition,
+            intensity=intensity,
+        )
+
     def run(self) -> None:
         while not self._stop_event.is_set():
             state = self._runtime.snapshot()
@@ -237,13 +246,7 @@ class DepartureGenerator(threading.Thread):
         if interval_seconds <= 0:
             return
 
-        scenario_definition = SCENARIO_DEFINITIONS.get((scenario or {}).get("name", ""), {})
-        intensity = float((scenario or {}).get("intensity", 1.0))
-        effective_lifecycle = build_effective_lifecycle_config(
-            base_lifecycle=self._lifecycle,
-            scenario_definition=scenario_definition,
-            intensity=intensity,
-        )
+        effective_lifecycle = self.effective_lifecycle_config(scenario)
 
         elapsed_days = interval_seconds / 86400.0
         self._store.increment_ship_age(elapsed_days)
