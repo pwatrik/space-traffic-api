@@ -59,16 +59,37 @@ class CatalogRepository:
             )
             self._context.conn.commit()
 
-    def list_stations(self, body_type: str | None = None) -> list[dict[str, Any]]:
-        query = "SELECT * FROM stations"
+    def list_stations(
+        self,
+        body_type: str | None = None,
+        offset: int = 0,
+        limit: int = 1000,
+        order_by: str = "body_type",
+        order: str = "asc",
+    ) -> tuple[list[dict[str, Any]], int]:
+        """List stations with pagination. Returns (rows, total_count)."""
+        # Validate order_by and order to prevent SQL injection
+        valid_order_by = {"id", "name", "body_name", "body_type", "parent_body"}
+        valid_order = {"asc", "desc"}
+        order_by = order_by if order_by in valid_order_by else "body_type"
+        order = order if order in valid_order else "asc"
+
+        where_clauses: list[str] = []
         params: list[Any] = []
         if body_type:
-            query += " WHERE body_type = ?"
+            where_clauses.append("body_type = ?")
             params.append(body_type)
-        query += " ORDER BY body_type, body_name"
 
+        where_sql = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+
+        # Get total count
+        count_query = f"SELECT COUNT(*) FROM stations{where_sql}"
         with self._context.lock:
-            rows = self._context.conn.execute(query, params).fetchall()
+            total_count = int(self._context.conn.execute(count_query, params).fetchone()[0])
+            # Get paginated results
+            query = f"SELECT * FROM stations{where_sql} ORDER BY {order_by} {order}, id ASC LIMIT ? OFFSET ?"
+            rows = self._context.conn.execute(query, params + [limit, offset]).fetchall()
+
         records = [dict(row) for row in rows]
         for row in records:
             raw = row.get("allowed_size_classes")
@@ -76,7 +97,7 @@ class CatalogRepository:
                 row["allowed_size_classes"] = json.loads(raw) if raw else []
             except json.JSONDecodeError:
                 row["allowed_size_classes"] = []
-        return records
+        return records, total_count
 
     def list_ships(
         self,
@@ -84,7 +105,18 @@ class CatalogRepository:
         home_station_id: str | None = None,
         cargo: str | None = None,
         ship_type: str | None = None,
-    ) -> list[dict[str, Any]]:
+        offset: int = 0,
+        limit: int = 1000,
+        order_by: str = "id",
+        order: str = "asc",
+    ) -> tuple[list[dict[str, Any]], int]:
+        """List ships with pagination. Returns (rows, total_count)."""
+        # Validate order_by and order to prevent SQL injection
+        valid_order_by = {"id", "name", "faction", "ship_type", "cargo", "home_station_id", "size_class"}
+        valid_order = {"asc", "desc"}
+        order_by = order_by if order_by in valid_order_by else "id"
+        order = order if order in valid_order else "asc"
+
         where_clauses: list[str] = []
         params: list[Any] = []
         if faction:
@@ -100,14 +132,21 @@ class CatalogRepository:
             where_clauses.append("ship_type = ?")
             params.append(ship_type)
 
-        query = "SELECT * FROM ships"
-        if where_clauses:
-            query += " WHERE " + " AND ".join(where_clauses)
-        query += " ORDER BY id"
+        where_sql = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
 
+        # Get total count
+        count_query = f"SELECT COUNT(*) FROM ships{where_sql}"
         with self._context.lock:
-            rows = self._context.conn.execute(query, params).fetchall()
-        return [dict(row) for row in rows]
+            total_count = int(self._context.conn.execute(count_query, params).fetchone()[0])
+            # Get paginated results
+            if order_by == "id":
+                order_clause = "ORDER BY id " + order
+            else:
+                # Add a unique tie-breaker to ensure stable pagination when order_by has ties
+                order_clause = f"ORDER BY {order_by} {order}, id ASC"
+            query = f"SELECT * FROM ships{where_sql} {order_clause} LIMIT ? OFFSET ?"
+            rows = self._context.conn.execute(query, params + [limit, offset]).fetchall()
+        return [dict(row) for row in rows], total_count
 
     def count_stations(self) -> int:
         with self._context.lock:
@@ -116,3 +155,27 @@ class CatalogRepository:
     def count_ships(self) -> int:
         with self._context.lock:
             return int(self._context.conn.execute("SELECT COUNT(*) FROM ships").fetchone()[0])
+
+    def get_ship_stats_by_faction(self) -> dict[str, int]:
+        """Return ship count grouped by faction."""
+        with self._context.lock:
+            rows = self._context.conn.execute(
+                "SELECT faction, COUNT(*) as count FROM ships GROUP BY faction ORDER BY faction"
+            ).fetchall()
+        return {row["faction"]: row["count"] for row in rows}
+
+    def get_ship_stats_by_type(self) -> dict[str, int]:
+        """Return ship count grouped by ship_type."""
+        with self._context.lock:
+            rows = self._context.conn.execute(
+                "SELECT ship_type, COUNT(*) as count FROM ships GROUP BY ship_type ORDER BY ship_type"
+            ).fetchall()
+        return {row["ship_type"]: row["count"] for row in rows}
+
+    def get_cargo_stats(self) -> dict[str, int]:
+        """Return ship count grouped by cargo type."""
+        with self._context.lock:
+            rows = self._context.conn.execute(
+                "SELECT cargo, COUNT(*) as count FROM ships GROUP BY cargo ORDER BY cargo"
+            ).fetchall()
+        return {row["cargo"]: row["count"] for row in rows}
