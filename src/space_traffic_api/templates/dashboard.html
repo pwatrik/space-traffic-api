@@ -12,6 +12,7 @@
   <body>
     <div class="bg-orbit bg-orbit-a"></div>
     <div class="bg-orbit bg-orbit-b"></div>
+    <div class="toast-tray" id="toast-tray" aria-live="polite" aria-atomic="true"></div>
 
     <header class="hero">
       <div>
@@ -65,7 +66,7 @@
               <button class="btn" id="cfg-save">Apply</button>
               <button class="btn danger" id="ctl-reset">Reset</button>
             </div>
-            <p class="meta" id="control-status">Control status: idle</p>
+            <p class="meta control-status-row"><span class="status-indicator idle" id="control-status">idle</span><span id="control-status-detail">No pending control actions.</span></p>
           </div>
 
           <div class="control-block">
@@ -93,6 +94,17 @@
               <button class="btn" id="fault-clear">Clear All</button>
             </div>
           </div>
+        </div>
+
+        <div class="control-summary-grid">
+          <article class="summary-block">
+            <h3>Active Scenario</h3>
+            <div id="active-scenario-summary" class="summary-content">Loading...</div>
+          </article>
+          <article class="summary-block">
+            <h3>Active Faults</h3>
+            <div id="active-faults-summary" class="summary-content">Loading...</div>
+          </article>
         </div>
       </section>
 

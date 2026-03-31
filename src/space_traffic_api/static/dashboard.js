@@ -23,8 +23,68 @@ function appendLog(el, line, maxLines = 160) {
   el.scrollTop = el.scrollHeight;
 }
 
-function setControlStatus(text) {
-  document.getElementById("control-status").textContent = `Control status: ${text}`;
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function setControlStatus(state, detail) {
+  const statusEl = document.getElementById("control-status");
+  const detailEl = document.getElementById("control-status-detail");
+  statusEl.className = `status-indicator ${state}`;
+  statusEl.textContent = state;
+  detailEl.textContent = detail;
+}
+
+function showToast(kind, title, message, ttlMs = 4200) {
+  const tray = document.getElementById("toast-tray");
+  const toast = document.createElement("div");
+  toast.className = `toast ${kind}`;
+  toast.innerHTML = `<strong>${escapeHtml(title)}</strong><p>${escapeHtml(message)}</p>`;
+  tray.appendChild(toast);
+  window.setTimeout(() => {
+    toast.remove();
+  }, ttlMs);
+}
+
+function setButtonBusy(button, busy, busyLabel) {
+  if (!button.dataset.defaultLabel) {
+    button.dataset.defaultLabel = button.textContent;
+  }
+  button.disabled = busy;
+  button.classList.toggle("is-loading", busy);
+  button.textContent = busy ? busyLabel : button.dataset.defaultLabel;
+}
+
+async function withButtonBusy(button, busyLabel, work) {
+  setButtonBusy(button, true, busyLabel);
+  try {
+    return await work();
+  } finally {
+    setButtonBusy(button, false, busyLabel);
+  }
+}
+
+async function parseError(resp) {
+  const text = await resp.text();
+  try {
+    const data = JSON.parse(text);
+    return data.error || text || `HTTP ${resp.status}`;
+  } catch {
+    return text || `HTTP ${resp.status}`;
+  }
+}
+
+async function requestJson(url, options = {}) {
+  const resp = await fetch(url, options);
+  if (!resp.ok) {
+    throw new Error(await parseError(resp));
+  }
+  return resp.status === 204 ? null : resp.json();
 }
 
 const shipsQuery = {
@@ -122,6 +182,38 @@ function drawCharts() {
   drawSparkline("pirate-chart", pirateValues, "#ffd166", "rgba(255, 209, 102, 0.18)");
 }
 
+function renderControlSummary(config, faults) {
+  const scenarioEl = document.getElementById("active-scenario-summary");
+  const faultsEl = document.getElementById("active-faults-summary");
+
+  const activeScenario = config.active_scenario;
+  if (activeScenario) {
+    scenarioEl.innerHTML = `
+      <div class="pill-row">
+        <span class="mini-pill"><strong>${escapeHtml(activeScenario.name)}</strong></span>
+        <span class="mini-pill">intensity ${escapeHtml(activeScenario.intensity)}</span>
+        <span class="mini-pill">${escapeHtml(activeScenario.duration_seconds)}s</span>
+      </div>
+    `;
+  } else {
+    scenarioEl.innerHTML = '<span class="summary-empty">No active scenario.</span>';
+  }
+
+  const activeFaults = faults.active || {};
+  const entries = Object.entries(activeFaults);
+  if (!entries.length) {
+    faultsEl.innerHTML = '<span class="summary-empty">No active faults.</span>';
+    return;
+  }
+
+  faultsEl.innerHTML = `<div class="pill-row">${entries
+    .map(
+      ([name, value]) =>
+        `<span class="mini-pill"><strong>${escapeHtml(name)}</strong> rate ${escapeHtml(value.rate)}</span>`
+    )
+    .join("")}</div>`;
+}
+
 function setKpis(stats) {
   const summary = stats.summary || {};
   document.getElementById("kpi-ships").textContent = fmtNum(summary.ships);
@@ -203,15 +295,10 @@ function renderStations(rows, count, total) {
 }
 
 async function refreshSnapshots() {
-  const [statsResp, stateResp] = await Promise.all([
-    fetch("/stats"),
-    fetch("/ships/state?limit=20")
+  const [stats, statePayload] = await Promise.all([
+    requestJson("/stats"),
+    requestJson("/ships/state?limit=20")
   ]);
-  if (!statsResp.ok || !stateResp.ok) {
-    throw new Error("Snapshot fetch failed.");
-  }
-  const stats = await statsResp.json();
-  const statePayload = await stateResp.json();
   setKpis(stats);
   renderShipStates(statePayload.ships || []);
 }
@@ -223,11 +310,7 @@ async function refreshShips() {
   if (shipsQuery.faction) {
     params.set("faction", shipsQuery.faction);
   }
-  const resp = await fetch(`/ships?${params.toString()}`);
-  if (!resp.ok) {
-    throw new Error("Ships fetch failed.");
-  }
-  const payload = await resp.json();
+  const payload = await requestJson(`/ships?${params.toString()}`);
   renderShips(payload.ships || [], payload.count || 0, payload.total_count || 0);
 }
 
@@ -238,27 +321,16 @@ async function refreshStations() {
   if (stationsQuery.body_type) {
     params.set("body_type", stationsQuery.body_type);
   }
-  const resp = await fetch(`/stations?${params.toString()}`);
-  if (!resp.ok) {
-    throw new Error("Stations fetch failed.");
-  }
-  const payload = await resp.json();
+  const payload = await requestJson(`/stations?${params.toString()}`);
   renderStations(payload.stations || [], payload.count || 0, payload.total_count || 0);
 }
 
 async function loadControlData() {
-  const [configResp, scenariosResp, faultsResp] = await Promise.all([
-    fetch("/config"),
-    fetch("/scenarios"),
-    fetch("/faults")
+  const [config, scenarios, faults] = await Promise.all([
+    requestJson("/config"),
+    requestJson("/scenarios"),
+    requestJson("/faults")
   ]);
-  if (!configResp.ok || !scenariosResp.ok || !faultsResp.ok) {
-    throw new Error("Control data fetch failed.");
-  }
-
-  const config = await configResp.json();
-  const scenarios = await scenariosResp.json();
-  const faults = await faultsResp.json();
 
   document.getElementById("cfg-deterministic").checked = Boolean(config.deterministic_mode);
   const seed = config.deterministic_seed;
@@ -281,137 +353,172 @@ async function loadControlData() {
     option.textContent = `${entry.name} (${entry.default_rate})`;
     faultSelect.appendChild(option);
   });
+  renderControlSummary(config, faults);
 }
 
 function bindControls() {
   const ctrlLog = document.getElementById("control-log");
+  const cfgSaveButton = document.getElementById("cfg-save");
+  const resetButton = document.getElementById("ctl-reset");
+  const scenarioActivateButton = document.getElementById("scenario-activate");
+  const scenarioDeactivateButton = document.getElementById("scenario-deactivate");
+  const faultActivateButton = document.getElementById("fault-activate");
+  const faultClearButton = document.getElementById("fault-clear");
 
-  document.getElementById("cfg-save").addEventListener("click", async () => {
-    try {
-      const deterministicMode = document.getElementById("cfg-deterministic").checked;
-      const seedRaw = document.getElementById("cfg-seed").value.trim();
-      const payload = { deterministic_mode: deterministicMode };
-      if (seedRaw) {
-        payload.deterministic_seed = Number(seedRaw);
-      }
+  cfgSaveButton.addEventListener("click", async () => {
+    await withButtonBusy(cfgSaveButton, "Applying...", async () => {
+      try {
+        const deterministicMode = document.getElementById("cfg-deterministic").checked;
+        const seedRaw = document.getElementById("cfg-seed").value.trim();
+        const payload = { deterministic_mode: deterministicMode };
+        if (seedRaw) {
+          payload.deterministic_seed = Number(seedRaw);
+        }
 
-      const resp = await fetch("/config", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      if (!resp.ok) {
-        throw new Error(await resp.text());
+        setControlStatus("pending", "Applying runtime configuration...");
+        await requestJson("/config", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        await loadControlData();
+        setControlStatus("success", "Runtime configuration updated.");
+        appendLog(ctrlLog, "[control] config patched");
+        showToast("success", "Config Applied", "Runtime configuration updated.");
+      } catch (err) {
+        setControlStatus("error", `Config update failed: ${err}`);
+        appendLog(ctrlLog, `[control-error] ${err}`);
+        showToast("error", "Config Failed", String(err));
       }
-      setControlStatus("config updated");
-      appendLog(ctrlLog, "[control] config patched");
-    } catch (err) {
-      setControlStatus(`error: ${err}`);
-      appendLog(ctrlLog, `[control-error] ${err}`);
-    }
+    });
   });
 
-  document.getElementById("ctl-reset").addEventListener("click", async () => {
-    try {
-      const seedRaw = document.getElementById("cfg-seed").value.trim();
-      const payload = {};
-      if (seedRaw) {
-        payload.seed = Number(seedRaw);
-      }
-      const resp = await fetch("/control/reset", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      if (!resp.ok) {
-        throw new Error(await resp.text());
-      }
-      setControlStatus("reset applied");
-      appendLog(ctrlLog, "[control] reset applied");
-      await Promise.all([refreshSnapshots(), refreshShips(), refreshStations()]);
-    } catch (err) {
-      setControlStatus(`error: ${err}`);
-      appendLog(ctrlLog, `[control-error] ${err}`);
+  resetButton.addEventListener("click", async () => {
+    if (!window.confirm("Reset the simulation state and clear departure history?")) {
+      return;
     }
+
+    await withButtonBusy(resetButton, "Resetting...", async () => {
+      try {
+        const seedRaw = document.getElementById("cfg-seed").value.trim();
+        const payload = {};
+        if (seedRaw) {
+          payload.seed = Number(seedRaw);
+        }
+
+        setControlStatus("pending", "Resetting simulation state...");
+        await requestJson("/control/reset", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        await Promise.all([refreshSnapshots(), refreshShips(), refreshStations(), loadControlData()]);
+        setControlStatus("success", "Simulation reset applied.");
+        appendLog(ctrlLog, "[control] reset applied");
+        showToast("success", "Simulation Reset", "State and departure history were reset.");
+      } catch (err) {
+        setControlStatus("error", `Reset failed: ${err}`);
+        appendLog(ctrlLog, `[control-error] ${err}`);
+        showToast("error", "Reset Failed", String(err));
+      }
+    });
   });
 
-  document.getElementById("scenario-activate").addEventListener("click", async () => {
-    try {
-      const payload = {
-        name: document.getElementById("scenario-name").value,
-        intensity: Number(document.getElementById("scenario-intensity").value || "1"),
-        duration_seconds: Number(document.getElementById("scenario-duration").value || "300")
-      };
-      const resp = await fetch("/scenarios/activate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      if (!resp.ok) {
-        throw new Error(await resp.text());
+  scenarioActivateButton.addEventListener("click", async () => {
+    await withButtonBusy(scenarioActivateButton, "Activating...", async () => {
+      try {
+        const payload = {
+          name: document.getElementById("scenario-name").value,
+          intensity: Number(document.getElementById("scenario-intensity").value || "1"),
+          duration_seconds: Number(document.getElementById("scenario-duration").value || "300")
+        };
+        setControlStatus("pending", `Activating scenario ${payload.name}...`);
+        await requestJson("/scenarios/activate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        await Promise.all([refreshSnapshots(), loadControlData()]);
+        setControlStatus("success", `Scenario ${payload.name} is active.`);
+        appendLog(ctrlLog, `[control] scenario activated: ${payload.name}`);
+        showToast("success", "Scenario Activated", `${payload.name} is now active.`);
+      } catch (err) {
+        setControlStatus("error", `Scenario activation failed: ${err}`);
+        appendLog(ctrlLog, `[control-error] ${err}`);
+        showToast("error", "Scenario Failed", String(err));
       }
-      setControlStatus(`scenario ${payload.name} active`);
-      appendLog(ctrlLog, `[control] scenario activated: ${payload.name}`);
-      await refreshSnapshots();
-    } catch (err) {
-      setControlStatus(`error: ${err}`);
-      appendLog(ctrlLog, `[control-error] ${err}`);
-    }
+    });
   });
 
-  document.getElementById("scenario-deactivate").addEventListener("click", async () => {
-    try {
-      const resp = await fetch("/scenarios/deactivate", { method: "POST" });
-      if (!resp.ok) {
-        throw new Error(await resp.text());
-      }
-      setControlStatus("scenario deactivated");
-      appendLog(ctrlLog, "[control] scenario deactivated");
-      await refreshSnapshots();
-    } catch (err) {
-      setControlStatus(`error: ${err}`);
-      appendLog(ctrlLog, `[control-error] ${err}`);
+  scenarioDeactivateButton.addEventListener("click", async () => {
+    if (!window.confirm("Deactivate the current scenario?")) {
+      return;
     }
+
+    await withButtonBusy(scenarioDeactivateButton, "Clearing...", async () => {
+      try {
+        setControlStatus("pending", "Deactivating current scenario...");
+        await requestJson("/scenarios/deactivate", { method: "POST" });
+        await Promise.all([refreshSnapshots(), loadControlData()]);
+        setControlStatus("success", "Scenario deactivated.");
+        appendLog(ctrlLog, "[control] scenario deactivated");
+        showToast("success", "Scenario Cleared", "The active scenario was deactivated.");
+      } catch (err) {
+        setControlStatus("error", `Scenario deactivation failed: ${err}`);
+        appendLog(ctrlLog, `[control-error] ${err}`);
+        showToast("error", "Scenario Clear Failed", String(err));
+      }
+    });
   });
 
-  document.getElementById("fault-activate").addEventListener("click", async () => {
-    try {
-      const name = document.getElementById("fault-name").value;
-      const rate = Number(document.getElementById("fault-rate").value || "0.2");
-      const duration = Number(document.getElementById("fault-duration").value || "120");
-      const payload = { faults: { [name]: { rate, duration_seconds: duration } } };
-      const resp = await fetch("/faults/activate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      if (!resp.ok) {
-        throw new Error(await resp.text());
+  faultActivateButton.addEventListener("click", async () => {
+    await withButtonBusy(faultActivateButton, "Injecting...", async () => {
+      try {
+        const name = document.getElementById("fault-name").value;
+        const rate = Number(document.getElementById("fault-rate").value || "0.2");
+        const duration = Number(document.getElementById("fault-duration").value || "120");
+        const payload = { faults: { [name]: { rate, duration_seconds: duration } } };
+        setControlStatus("pending", `Activating fault ${name}...`);
+        await requestJson("/faults/activate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        await loadControlData();
+        setControlStatus("success", `Fault ${name} activated.`);
+        appendLog(ctrlLog, `[control] fault activated: ${name}`);
+        showToast("success", "Fault Activated", `${name} is now affecting live events.`);
+      } catch (err) {
+        setControlStatus("error", `Fault activation failed: ${err}`);
+        appendLog(ctrlLog, `[control-error] ${err}`);
+        showToast("error", "Fault Failed", String(err));
       }
-      setControlStatus(`fault ${name} activated`);
-      appendLog(ctrlLog, `[control] fault activated: ${name}`);
-    } catch (err) {
-      setControlStatus(`error: ${err}`);
-      appendLog(ctrlLog, `[control-error] ${err}`);
-    }
+    });
   });
 
-  document.getElementById("fault-clear").addEventListener("click", async () => {
-    try {
-      const resp = await fetch("/faults/deactivate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({})
-      });
-      if (!resp.ok) {
-        throw new Error(await resp.text());
-      }
-      setControlStatus("all faults cleared");
-      appendLog(ctrlLog, "[control] all faults cleared");
-    } catch (err) {
-      setControlStatus(`error: ${err}`);
-      appendLog(ctrlLog, `[control-error] ${err}`);
+  faultClearButton.addEventListener("click", async () => {
+    if (!window.confirm("Clear all active faults?")) {
+      return;
     }
+
+    await withButtonBusy(faultClearButton, "Clearing...", async () => {
+      try {
+        setControlStatus("pending", "Clearing active faults...");
+        await requestJson("/faults/deactivate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({})
+        });
+        await loadControlData();
+        setControlStatus("success", "All active faults cleared.");
+        appendLog(ctrlLog, "[control] all faults cleared");
+        showToast("success", "Faults Cleared", "All active faults were cleared.");
+      } catch (err) {
+        setControlStatus("error", `Fault clear failed: ${err}`);
+        appendLog(ctrlLog, `[control-error] ${err}`);
+        showToast("error", "Fault Clear Failed", String(err));
+      }
+    });
   });
 }
 
@@ -426,6 +533,7 @@ function bindExplorerControls() {
       await refreshShips();
     } catch (err) {
       appendLog(ctrlLog, `[ships-error] ${err}`);
+      showToast("error", "Ships Refresh Failed", String(err));
     }
   });
 
@@ -435,6 +543,7 @@ function bindExplorerControls() {
       await refreshShips();
     } catch (err) {
       appendLog(ctrlLog, `[ships-error] ${err}`);
+      showToast("error", "Ships Paging Failed", String(err));
     }
   });
 
@@ -444,6 +553,7 @@ function bindExplorerControls() {
       await refreshShips();
     } catch (err) {
       appendLog(ctrlLog, `[ships-error] ${err}`);
+      showToast("error", "Ships Paging Failed", String(err));
     }
   });
 
@@ -455,6 +565,7 @@ function bindExplorerControls() {
       await refreshStations();
     } catch (err) {
       appendLog(ctrlLog, `[stations-error] ${err}`);
+      showToast("error", "Stations Refresh Failed", String(err));
     }
   });
 
@@ -464,6 +575,7 @@ function bindExplorerControls() {
       await refreshStations();
     } catch (err) {
       appendLog(ctrlLog, `[stations-error] ${err}`);
+      showToast("error", "Stations Paging Failed", String(err));
     }
   });
 
@@ -473,6 +585,7 @@ function bindExplorerControls() {
       await refreshStations();
     } catch (err) {
       appendLog(ctrlLog, `[stations-error] ${err}`);
+      showToast("error", "Stations Paging Failed", String(err));
     }
   });
 }
@@ -529,6 +642,7 @@ async function init() {
   }
 
   initStreams();
+  setControlStatus("idle", "Live streams connected. Console ready.");
   setInterval(async () => {
     try {
       await refreshSnapshots();
