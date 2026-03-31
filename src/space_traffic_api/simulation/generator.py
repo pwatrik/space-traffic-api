@@ -262,6 +262,12 @@ class DepartureGenerator(threading.Thread):
         if age_update_days > 0.0:
             self._store.increment_ship_age(age_update_days)
 
+        self._manage_pirate_activity(
+            tick_time=tick_time,
+            elapsed_days=elapsed_days,
+            lifecycle_conf=effective_lifecycle,
+        )
+
         active_ships = self._store.list_active_ships_for_lifecycle()
         if not active_ships:
             return
@@ -289,6 +295,119 @@ class DepartureGenerator(threading.Thread):
             tick_time=tick_time,
             lifecycle_conf=effective_lifecycle,
         )
+
+    def _manage_pirate_activity(
+        self,
+        tick_time: datetime,
+        elapsed_days: float,
+        lifecycle_conf: dict[str, Any],
+    ) -> None:
+        conf = lifecycle_conf.get("pirate_activity") or {}
+        if not conf.get("enabled", False):
+            return
+
+        state = self._runtime.snapshot().get("pirate_event")
+        if not isinstance(state, dict):
+            state = {}
+
+        active = bool(state.get("active", False))
+        strength = float(state.get("strength") or 0.0)
+        strength_end_threshold = float(conf.get("strength_end_threshold", 0.5))
+
+        if active:
+            decay_per_day = float(conf.get("ambient_strength_decay_per_day", 0.0))
+            if decay_per_day > 0 and elapsed_days > 0:
+                next_strength = max(0.0, strength - (decay_per_day * elapsed_days))
+                if abs(next_strength - strength) >= 1e-9:
+                    strength = next_strength
+                    state["strength"] = strength
+                    state["updated_at"] = tick_time.isoformat()
+                    self._runtime.set_pirate_event_state(state)
+
+            if strength <= strength_end_threshold:
+                previous_anchor = state.get("anchor_body")
+                min_days = float(conf.get("respawn_min_days", 10.0))
+                max_days = float(conf.get("respawn_max_days", 30.0))
+                delay_days = self._rng.uniform(min_days, max_days)
+                next_spawn_at = tick_time + timedelta(days=delay_days)
+
+                next_state = {
+                    **state,
+                    "active": False,
+                    "anchor_body": None,
+                    "previous_anchor_body": previous_anchor,
+                    "strength": strength,
+                    "ended_at": tick_time.isoformat(),
+                    "next_spawn_earliest_at": next_spawn_at.isoformat(),
+                    "affected_station_ids": [],
+                    "updated_at": tick_time.isoformat(),
+                }
+                self._runtime.set_pirate_event_state(next_state)
+                self._store.insert_control_event(
+                    event_type="lifecycle",
+                    action="pirate_ended",
+                    payload={
+                        "anchor_body": previous_anchor,
+                        "strength": strength,
+                        "next_spawn_earliest_at": next_spawn_at.isoformat(),
+                        "at": tick_time.isoformat(),
+                    },
+                )
+            return
+
+        next_spawn_raw = state.get("next_spawn_earliest_at")
+        next_spawn_at = self._parse_iso(next_spawn_raw)
+        if next_spawn_at and tick_time < next_spawn_at:
+            return
+
+        allowed_anchors = [str(x) for x in conf.get("allowed_anchors", []) if str(x).strip()]
+        if not allowed_anchors:
+            return
+
+        previous_anchor = state.get("previous_anchor_body")
+        candidates = [anchor for anchor in allowed_anchors if anchor != previous_anchor]
+        if not candidates:
+            candidates = allowed_anchors
+        anchor = self._rng.choice(candidates)
+        affected_station_ids = sorted(
+            [
+                station_id
+                for station_id, station in self._station_lookup.items()
+                if str(station.get("parent_body") or "") == anchor
+            ]
+        )
+
+        strength_start = float(conf.get("strength_start", 1.0))
+        next_state = {
+            "active": True,
+            "anchor_body": anchor,
+            "previous_anchor_body": previous_anchor,
+            "strength": strength_start,
+            "started_at": tick_time.isoformat(),
+            "ended_at": None,
+            "next_spawn_earliest_at": None,
+            "affected_station_ids": affected_station_ids,
+            "updated_at": tick_time.isoformat(),
+        }
+        self._runtime.set_pirate_event_state(next_state)
+        self._store.insert_control_event(
+            event_type="lifecycle",
+            action="pirate_started",
+            payload={
+                "anchor_body": anchor,
+                "strength": strength_start,
+                "affected_station_ids": affected_station_ids,
+                "at": tick_time.isoformat(),
+            },
+        )
+
+    def _parse_iso(self, value: Any) -> datetime | None:
+        if not isinstance(value, str) or not value.strip():
+            return None
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
 
     def _run_decommission(
         self,

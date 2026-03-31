@@ -247,6 +247,7 @@
       ],
       "strength_start": 1.0,
       "strength_end_threshold": 0.5,
+      "ambient_strength_decay_per_day": 0.005,
       "merchant_arrival_destruction_multiplier": 4.0,
       "strength_decay_per_bounty_hunter_arrival": 0.02,
       "respawn_min_days": 10,

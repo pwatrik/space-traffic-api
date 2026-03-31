@@ -340,6 +340,10 @@ def load_seed_catalog(catalog_path: str | None = None) -> dict[str, Any]:
         "allowed_anchors": allowed_anchor_list,
         "strength_start": strength_start,
         "strength_end_threshold": strength_end_threshold,
+        "ambient_strength_decay_per_day": _ensure_non_negative_number(
+            "lifecycle.pirate_activity.ambient_strength_decay_per_day",
+            pirate_raw.get("ambient_strength_decay_per_day", 0.0),
+        ),
         "merchant_arrival_destruction_multiplier": _ensure_positive_number(
             "lifecycle.pirate_activity.merchant_arrival_destruction_multiplier",
             pirate_raw.get("merchant_arrival_destruction_multiplier", 4.0),

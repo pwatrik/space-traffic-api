@@ -27,12 +27,33 @@ class RuntimeState:
             "db_max_size_mb": config.db_max_size_mb,
             "active_scenario": None,
             "active_faults": {},
+            "pirate_event": {
+                "active": False,
+                "anchor_body": None,
+                "previous_anchor_body": None,
+                "strength": 0.0,
+                "started_at": None,
+                "ended_at": None,
+                "next_spawn_earliest_at": None,
+                "affected_station_ids": [],
+            },
             "last_reset_at": None,
         }
 
         persisted = self._store.get_control_state("runtime")
         if persisted:
             self._state.update(persisted)
+        if "pirate_event" not in self._state or not isinstance(self._state["pirate_event"], dict):
+            self._state["pirate_event"] = {
+                "active": False,
+                "anchor_body": None,
+                "previous_anchor_body": None,
+                "strength": 0.0,
+                "started_at": None,
+                "ended_at": None,
+                "next_spawn_earliest_at": None,
+                "affected_station_ids": [],
+            }
 
     def subscribe(self) -> queue.Queue[dict[str, Any]]:
         q: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=1000)
@@ -157,6 +178,18 @@ class RuntimeState:
         with self._lock:
             if seed is not None:
                 self._state["deterministic_seed"] = int(seed)
+            pirate_event = self._state.get("pirate_event", {})
+            if isinstance(pirate_event, dict):
+                self._state["pirate_event"] = {
+                    **pirate_event,
+                    "active": False,
+                    "anchor_body": None,
+                    "strength": 0.0,
+                    "started_at": None,
+                    "ended_at": datetime.now(UTC).isoformat(),
+                    "next_spawn_earliest_at": None,
+                    "affected_station_ids": [],
+                }
             self._state["last_reset_at"] = datetime.now(UTC).isoformat()
             self._persist_unlocked()
             self._emit_control_event_unlocked(
@@ -172,6 +205,11 @@ class RuntimeState:
 
     def list_control_events(self, since_id: int | None, limit: int, order: str) -> list[dict[str, Any]]:
         return self._store.list_control_events(since_id=since_id, limit=limit, order=order)
+
+    def set_pirate_event_state(self, pirate_event: dict[str, Any]) -> None:
+        with self._lock:
+            self._state["pirate_event"] = dict(pirate_event)
+            self._persist_unlocked()
 
     def _persist_unlocked(self) -> None:
         self._store.set_control_state("runtime", self._state)
