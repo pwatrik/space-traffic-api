@@ -315,11 +315,20 @@ class DepartureGenerator(threading.Thread):
     ) -> None:
         conf = lifecycle_conf.get("pirate_activity") or {}
         if not conf.get("enabled", False):
+            snapshot = self._runtime.snapshot()
+            persisted = snapshot.get("pirate_event")
+            if isinstance(persisted, dict) and persisted.get("active"):
+                ended_at = tick_time.isoformat()
+                next_state = deepcopy(persisted)
+                next_state["active"] = False
+                next_state["strength"] = 0.0
+                next_state["ended_at"] = ended_at
+                next_state["updated_at"] = ended_at
+                next_state["next_spawn_earliest_at"] = None
+                self._runtime.set_pirate_event_state(next_state)
             return
 
-        state = self._runtime.snapshot().get("pirate_event")
-        if not isinstance(state, dict):
-            state = {}
+        state = deepcopy(self._runtime.snapshot().get("pirate_event") or {})
 
         active = bool(state.get("active", False))
         strength = float(state.get("strength") or 0.0)
@@ -398,7 +407,7 @@ class DepartureGenerator(threading.Thread):
         if not conf.get("enabled", False):
             return
 
-        state = self._runtime.snapshot().get("pirate_event")
+        state = deepcopy(self._runtime.snapshot().get("pirate_event"))
         if not isinstance(state, dict) or not state.get("active"):
             return
 
