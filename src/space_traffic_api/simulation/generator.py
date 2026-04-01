@@ -172,8 +172,8 @@ class DepartureGenerator(threading.Thread):
             effective_min, effective_max = self._effective_rate_bounds(state, scenario)
             rate = self._rng.randint(effective_min, effective_max)
             interval_seconds = max(0.2, 60.0 / float(rate))
-            simulation_time_scale = float(state.get("simulation_time_scale", 1.0) or 1.0)
-            simulated_interval_seconds = interval_seconds * max(0.1, simulation_time_scale)
+            simulation_time_scale = max(0.1, float(state.get("simulation_time_scale", 1.0) or 1.0))
+            wait_seconds = interval_seconds / simulation_time_scale
             tick_time = self._current_tick_time(state)
 
             if not self._startup_merchants_launched:
@@ -185,22 +185,22 @@ class DepartureGenerator(threading.Thread):
                 now_iso=tick_time.isoformat(),
             )
             self._apply_lifecycle(
-                interval_seconds=simulated_interval_seconds,
+                interval_seconds=interval_seconds,
                 tick_time=tick_time,
                 scenario=scenario,
                 arrived_ships=arrived_ships,
             )
 
             if self._is_globally_interrupted(scenario):
-                self._advance_sim_time(tick_time, simulated_interval_seconds)
-                if self._stop_event.wait(timeout=min(1.0, interval_seconds)):
+                self._advance_sim_time(tick_time, interval_seconds)
+                if self._stop_event.wait(timeout=min(1.0, wait_seconds)):
                     break
                 continue
 
             event = self._build_event(state, scenario, tick_time)
             if event is None:
-                self._advance_sim_time(tick_time, simulated_interval_seconds)
-                if self._stop_event.wait(timeout=min(1.0, interval_seconds)):
+                self._advance_sim_time(tick_time, interval_seconds)
+                if self._stop_event.wait(timeout=min(1.0, wait_seconds)):
                     break
                 continue
 
@@ -211,9 +211,9 @@ class DepartureGenerator(threading.Thread):
                     break
             self._persist_and_publish_event(event, state)
 
-            self._advance_sim_time(tick_time, simulated_interval_seconds)
+            self._advance_sim_time(tick_time, interval_seconds)
 
-            if self._stop_event.wait(timeout=interval_seconds):
+            if self._stop_event.wait(timeout=wait_seconds):
                 break
 
     def _ensure_rng(self, state: dict[str, Any]) -> None:
@@ -437,6 +437,7 @@ class DepartureGenerator(threading.Thread):
                 "affected_station_ids": affected_station_ids,
                 "at": tick_time.isoformat(),
             },
+            event_time=tick_time.isoformat(),
         )
 
     def _apply_pirate_arrival_effects(
@@ -493,6 +494,7 @@ class DepartureGenerator(threading.Thread):
                         "anchor_body": state.get("anchor_body"),
                         "at": tick_time.isoformat(),
                     },
+                    event_time=tick_time.isoformat(),
                 )
 
         bounty_arrivals = [
@@ -527,6 +529,7 @@ class DepartureGenerator(threading.Thread):
                 "bounty_hunter_arrivals": len(bounty_arrivals),
                 "at": tick_time.isoformat(),
             },
+            event_time=tick_time.isoformat(),
         )
 
         runtime_snap = self._runtime.snapshot()
@@ -574,6 +577,7 @@ class DepartureGenerator(threading.Thread):
                 "next_spawn_earliest_at": next_spawn_at.isoformat(),
                 "at": tick_time.isoformat(),
             },
+            event_time=tick_time.isoformat(),
         )
 
     def _parse_iso(self, value: Any) -> datetime | None:
@@ -630,6 +634,7 @@ class DepartureGenerator(threading.Thread):
                     "count": len(retired_ids),
                     "at": tick_time.isoformat(),
                 },
+                event_time=tick_time.isoformat(),
             )
 
     def _run_war_impact(
@@ -686,6 +691,7 @@ class DepartureGenerator(threading.Thread):
                     "count": len(destroyed),
                     "at": tick_time.isoformat(),
                 },
+                event_time=tick_time.isoformat(),
             )
 
     def _run_build_queue(
@@ -797,7 +803,7 @@ class DepartureGenerator(threading.Thread):
                 "passengers": passengers,
             }
             self._store.seed_ships([ship])
-            self._store.seed_ship_states([ship])
+            self._store.seed_ship_states([ship], now_iso=tick_time.isoformat())
             self._ship_lookup[ship_id] = ship
             built_ship_ids.append(ship_id)
 
@@ -810,6 +816,7 @@ class DepartureGenerator(threading.Thread):
                     "count": len(built_ship_ids),
                     "at": tick_time.isoformat(),
                 },
+                event_time=tick_time.isoformat(),
             )
 
     def _pick_weighted_key(self, weights: dict[str, float]) -> str:

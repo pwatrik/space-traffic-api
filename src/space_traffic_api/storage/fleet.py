@@ -11,7 +11,16 @@ class FleetRepository:
         self._context = context
 
     def seed_ship_states(self, ships: list[dict[str, Any]], now_iso: str | None = None) -> None:
-        now = now_iso or datetime.now(UTC).isoformat()
+        if now_iso:
+            try:
+                parsed_now = datetime.fromisoformat(now_iso.replace("Z", "+00:00"))
+                if parsed_now.tzinfo is None:
+                    parsed_now = parsed_now.replace(tzinfo=UTC)
+                now = parsed_now.astimezone(UTC).isoformat()
+            except ValueError:
+                now = datetime.now(UTC).isoformat()
+        else:
+            now = datetime.now(UTC).isoformat()
         rows = [
             {
                 "ship_id": ship["id"],

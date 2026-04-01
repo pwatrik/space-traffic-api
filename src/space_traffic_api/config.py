@@ -17,6 +17,15 @@ def _as_int(value: str | None, default: int) -> int:
         return default
 
 
+def _as_float(value: str | None, default: float) -> float:
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
+
+
 @dataclass(frozen=True)
 class AppConfig:
     db_path: str
@@ -46,5 +55,5 @@ class AppConfig:
             db_max_size_mb=_as_int(os.getenv("SPACE_TRAFFIC_DB_MAX_SIZE_MB"), 512),
             disable_generator=_as_bool(os.getenv("SPACE_TRAFFIC_DISABLE_GENERATOR"), False),
             merchant_idle_pause_seconds=_as_int(os.getenv("SPACE_TRAFFIC_MERCHANT_IDLE_PAUSE_SECONDS"), 120),
-            simulation_time_scale=float(os.getenv("SPACE_TRAFFIC_SIMULATION_TIME_SCALE", "1.0")),
+            simulation_time_scale=_as_float(os.getenv("SPACE_TRAFFIC_SIMULATION_TIME_SCALE"), 1.0),
         )

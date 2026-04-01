@@ -11,6 +11,19 @@ from .faults import FAULT_DEFINITIONS, normalize_fault_request
 from .scenarios import SCENARIO_DEFINITIONS
 
 
+def _parse_deterministic_start(raw: str | None) -> datetime:
+    """Parse and normalize a deterministic start time string, falling back to UTC now."""
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=UTC)
+            return parsed.astimezone(UTC)
+        except ValueError:
+            pass
+    return datetime.now(UTC)
+
+
 class RuntimeState:
     def __init__(self, config: AppConfig, store: SQLiteStore):
         self._lock = threading.Lock()
@@ -27,7 +40,7 @@ class RuntimeState:
             "db_max_size_mb": config.db_max_size_mb,
             "merchant_idle_pause_seconds": config.merchant_idle_pause_seconds,
             "simulation_time_scale": config.simulation_time_scale,
-            "simulation_now": config.deterministic_start_time if config.deterministic_mode else datetime.now(UTC).isoformat(),
+            "simulation_now": _parse_deterministic_start(config.deterministic_start_time).isoformat() if config.deterministic_mode else datetime.now(UTC).isoformat(),
             "active_scenario": None,
             "active_faults": {},
                        "pirate_spawn_probability_per_day": None,
@@ -253,7 +266,9 @@ class RuntimeState:
                     "affected_station_ids": [],
                 }
             if self._state.get("deterministic_mode"):
-                self._state["simulation_now"] = self._state.get("deterministic_start_time", now.isoformat())
+                deterministic_start = self._state.get("deterministic_start_time")
+                simulation_now_dt = _parse_deterministic_start(deterministic_start)
+                self._state["simulation_now"] = simulation_now_dt.isoformat()
             else:
                 self._state["simulation_now"] = now.isoformat()
             self._state["last_reset_at"] = now.isoformat()
