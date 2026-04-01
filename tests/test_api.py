@@ -1,4 +1,5 @@
 import os
+import time
 from tempfile import TemporaryDirectory
 
 from space_traffic_api.app import create_app
@@ -158,4 +159,57 @@ def test_stations_pagination():
             for station in payload["stations"]:
                 assert station["body_type"] == "planet"
         finally:
+            app.config["space_store"].close()
+
+
+def test_merchant_departure_updates_ship_cargo_from_source_station(monkeypatch):
+    with TemporaryDirectory() as tmp:
+        monkeypatch.setenv("SPACE_TRAFFIC_DB_PATH", f"{tmp}/test.db")
+        monkeypatch.setenv("SPACE_TRAFFIC_DISABLE_GENERATOR", "false")
+        monkeypatch.setenv("SPACE_TRAFFIC_DETERMINISTIC_MODE", "true")
+        monkeypatch.setenv("SPACE_TRAFFIC_DETERMINISTIC_SEED", "777")
+        monkeypatch.setenv("SPACE_TRAFFIC_MIN_EVENTS_PER_MIN", "240")
+        monkeypatch.setenv("SPACE_TRAFFIC_MAX_EVENTS_PER_MIN", "240")
+
+        app = create_app()
+        client = app.test_client()
+        try:
+            stations_resp = client.get("/stations?limit=5000")
+            assert stations_resp.status_code == 200
+            stations = stations_resp.get_json()["stations"]
+            station_cargo = {row["id"]: row.get("cargo_type", "") for row in stations}
+
+            merchant_ship = None
+            merchant_departure = None
+
+            deadline = time.time() + 6.0
+            while time.time() < deadline and merchant_departure is None:
+                ships_resp = client.get("/ships?limit=5000")
+                assert ships_resp.status_code == 200
+                ships = ships_resp.get_json()["ships"]
+                ship_by_id = {row["id"]: row for row in ships}
+
+                dep_resp = client.get("/departures?limit=200")
+                assert dep_resp.status_code == 200
+                departures = dep_resp.get_json()["departures"]
+
+                for dep in departures:
+                    ship = ship_by_id.get(dep["ship_id"])
+                    if ship and ship.get("faction") == "merchant":
+                        merchant_ship = ship
+                        merchant_departure = dep
+                        break
+
+                if merchant_departure is None:
+                    time.sleep(0.2)
+
+            assert merchant_departure is not None
+            assert merchant_ship is not None
+
+            source_station_id = merchant_departure["source_station_id"]
+            expected_cargo = station_cargo.get(source_station_id, "")
+            assert expected_cargo
+            assert merchant_ship["cargo"] == expected_cargo
+        finally:
+            app.config["space_simulation"].stop(timeout=6.0)
             app.config["space_store"].close()

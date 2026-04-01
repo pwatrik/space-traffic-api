@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import random
 import re
 from pathlib import Path
@@ -442,6 +443,9 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
     catalog = catalog or load_seed_catalog(catalog_path)
     templates = catalog["stations"]["templates"]
     stations: list[dict[str, Any]] = []
+    cargo_types = list(catalog.get("ship_generation", {}).get("cargo_types", []))
+    if not cargo_types:
+        cargo_types = ["general_supplies"]
 
     naming_ext = load_naming_config()
     raw_base_names = naming_ext.get("base_names_singular")
@@ -453,43 +457,138 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
         ship_seed = int(((catalog.get("ship_generation") or {}).get("defaults") or {}).get("ship_seed", 9001))
         random.Random(ship_seed).shuffle(base_names)
     _name_counter = [0]
+    _style_counter = [0]
 
-    def _next_station_name(suffix: str, fallback: str) -> str:
-        if not base_names:
-            return fallback
-        result = f"{base_names[_name_counter[0] % len(base_names)]} {suffix}"
+    large_planetoids = {
+        "Mercury",
+        "Venus",
+        "Earth",
+        "Mars",
+        "Moon",
+        "Triton",
+        "Ceres",
+    }
+    rng = random.Random(int(((catalog.get("ship_generation") or {}).get("defaults") or {}).get("ship_seed", 9001)) + 17)
+    nickname_pool = ["The Edge", "The Narrows", "The Beacon", "The Spindle", "The Lantern"]
+    designation_prefixes = ["HX", "AX", "CN", "OR", "VX", "RZ"]
+
+    def _is_large_planetoid(body_name: str) -> bool:
+        return body_name in large_planetoids
+
+    def _station_count(min_count: int, max_count: int) -> int:
+        if max_count <= min_count:
+            return min_count
+        return rng.randint(min_count, max_count)
+
+    def _station_cargo() -> str:
+        return rng.choice(cargo_types)
+
+    def _next_station_name(body: str, role_labels: list[str], fallback: str) -> str:
+        style = _style_counter[0] % 3
+        _style_counter[0] += 1
+
+        if style == 1:
+            nickname = nickname_pool[_name_counter[0] % len(nickname_pool)]
+            _name_counter[0] += 1
+            return nickname
+
+        if style == 2:
+            prefix = designation_prefixes[_name_counter[0] % len(designation_prefixes)]
+            _name_counter[0] += 1
+            return f"{body} {prefix}-{rng.randint(10, 999)}"
+
+        label = role_labels[_name_counter[0] % len(role_labels)]
         _name_counter[0] += 1
-        return result
+        if base_names:
+            return f"{base_names[(_name_counter[0] - 1) % len(base_names)]} {label}"
+        return fallback
 
     for planet in catalog["celestial"]["planets"]:
         template = templates["planet"]
-        sid = f"{template['id_prefix']}-{_sanitize_station_token(planet)}"
-        stations.append(
-            {
-                "id": sid,
-                "name": _next_station_name("Port", template["name_template"].format(body=planet)),
-                "body_name": planet,
-                "body_type": "planet",
-                "parent_body": planet,
-                "allowed_size_classes": template["allowed_size_classes"],
-            }
-        )
+        base_token = _sanitize_station_token(planet)
+
+        starbases = _station_count(1, 2) if _is_large_planetoid(planet) else 1
+        for idx in range(1, starbases + 1):
+            sid = f"{template['id_prefix']}-{base_token}" if idx == 1 else f"{template['id_prefix']}-{base_token}-SB{idx}"
+            stations.append(
+                {
+                    "id": sid,
+                    "name": _next_station_name(
+                        planet,
+                        ["Starbase", "Citadel", "Port", "Harbor"],
+                        template["name_template"].format(body=planet),
+                    ),
+                    "body_name": planet,
+                    "body_type": "planet",
+                    "parent_body": planet,
+                    "cargo_type": _station_cargo(),
+                    "allowed_size_classes": ["small", "medium", "large", "xlarge"],
+                }
+            )
+
+        orbitals = _station_count(1, 3) if _is_large_planetoid(planet) else 1
+        for idx in range(1, orbitals + 1):
+            sid = f"STN-PLANET-{base_token}-ORB{idx}"
+            stations.append(
+                {
+                    "id": sid,
+                    "name": _next_station_name(
+                        planet,
+                        ["Orbital", "Ring", "Array", "Anchor"],
+                        f"{planet} Orbital",
+                    ),
+                    "body_name": planet,
+                    "body_type": "planet",
+                    "parent_body": planet,
+                    "cargo_type": _station_cargo(),
+                    "allowed_size_classes": ["small", "medium", "large", "xlarge"],
+                }
+            )
 
     for moon in catalog["celestial"]["moons"]:
         moon_name = moon["name"]
         parent = moon["parent"]
         template = templates["moon"]
-        sid = f"{template['id_prefix']}-{_sanitize_station_token(moon_name)}"
-        stations.append(
-            {
-                "id": sid,
-                "name": _next_station_name("Station", template["name_template"].format(body=moon_name)),
-                "body_name": moon_name,
-                "body_type": "moon",
-                "parent_body": parent,
-                "allowed_size_classes": template["allowed_size_classes"],
-            }
-        )
+        base_token = _sanitize_station_token(moon_name)
+
+        orbitals = _station_count(1, 3) if _is_large_planetoid(moon_name) else 1
+        for idx in range(1, orbitals + 1):
+            sid = f"{template['id_prefix']}-{base_token}" if idx == 1 else f"{template['id_prefix']}-{base_token}-ORB{idx}"
+            stations.append(
+                {
+                    "id": sid,
+                    "name": _next_station_name(
+                        moon_name,
+                        ["Orbital", "Ring", "Relay", "Dock"],
+                        template["name_template"].format(body=moon_name),
+                    ),
+                    "body_name": moon_name,
+                    "body_type": "moon",
+                    "parent_body": parent,
+                    "cargo_type": _station_cargo(),
+                    "allowed_size_classes": ["small", "medium", "large", "xlarge"],
+                }
+            )
+
+        if _is_large_planetoid(moon_name):
+            starbases = _station_count(1, 2)
+            for idx in range(1, starbases + 1):
+                sid = f"{template['id_prefix']}-{base_token}-SB{idx}"
+                stations.append(
+                    {
+                        "id": sid,
+                        "name": _next_station_name(
+                            moon_name,
+                            ["Starbase", "Citadel", "Outpost"],
+                            f"{moon_name} Starbase",
+                        ),
+                        "body_name": moon_name,
+                        "body_type": "moon",
+                        "parent_body": parent,
+                        "cargo_type": _station_cargo(),
+                        "allowed_size_classes": ["small", "medium", "large", "xlarge"],
+                    }
+                )
 
     for asteroid in catalog["celestial"]["asteroids"]:
         template = templates["asteroid"]
@@ -497,11 +596,16 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
         stations.append(
             {
                 "id": sid,
-                "name": _next_station_name("Hub", template["name_template"].format(body=asteroid)),
+                "name": _next_station_name(
+                    asteroid,
+                    ["Exchange", "Nexus", "Hold", "Yard"],
+                    template["name_template"].format(body=asteroid),
+                ),
                 "body_name": asteroid,
                 "body_type": "asteroid",
                 "parent_body": template["parent_body"] or "Asteroid Belt",
-                "allowed_size_classes": template["allowed_size_classes"],
+                "cargo_type": _station_cargo(),
+                "allowed_size_classes": ["small", "medium", "large", "xlarge"],
             }
         )
 
@@ -585,7 +689,24 @@ def build_ships(
         else:
             ship_name = f"{rng.choice(adjectives)} {rng.choice(nouns)}"
         captain = f"{rng.choice(captain_first)} {rng.choice(captain_last)}"
-        cargo = rng.choice(ship_generation["cargo_types"])
+        displacement = round(rng.uniform(displacement_min, displacement_max), 3)
+
+        if faction == "bounty_hunter":
+            crew = rng.randint(1, 5)
+        else:
+            crew_min = max(1, int(math.ceil(displacement * 200.0)))
+            crew_max = max(crew_min, int(math.floor(displacement * 500.0)))
+            crew = rng.randint(crew_min, crew_max)
+
+        if faction == "merchant":
+            cargo = rng.choice(ship_generation["cargo_types"])
+            passengers = rng.randint(0, 10_000)
+        elif faction == "government":
+            cargo = ""
+            passengers = rng.randint(10, 500)
+        else:
+            cargo = ""
+            passengers = 0
 
         ships.append(
             {
@@ -594,10 +715,12 @@ def build_ships(
                 "faction": faction,
                 "ship_type": ship_type,
                 "size_class": size_class,
-                "displacement_million_m3": round(rng.uniform(displacement_min, displacement_max), 3),
+                "displacement_million_m3": displacement,
                 "home_station_id": home_station_id,
                 "captain_name": captain,
                 "cargo": cargo,
+                "crew": crew,
+                "passengers": passengers,
             }
         )
 

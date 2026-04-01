@@ -207,7 +207,7 @@ def test_custom_seed_catalog_defaults_are_applied():
         ships = build_ships(stations=stations, catalog_path=path)
         catalog = load_seed_catalog(path)
 
-    assert len(stations) == 2
+    assert len(stations) >= 4
     assert len(ships) == 3
     bounty_ships = [ship for ship in ships if ship["faction"] == "bounty_hunter"]
     assert bounty_ships
@@ -216,6 +216,27 @@ def test_custom_seed_catalog_defaults_are_applied():
     assert catalog["lifecycle"]["war_impact"]["max_losses_per_event"] == 2
     assert catalog["lifecycle"]["build_queue"]["base_builds_per_day"] == 2.0
     assert catalog["lifecycle"]["pirate_activity"]["respawn_min_days"] == 12.0
+
+
+def test_build_stations_expands_planetoids_and_asteroid_capabilities():
+    stations = build_stations()
+
+    earth_starbases = [s for s in stations if s["id"].startswith("STN-PLANET-EARTH")]
+    earth_orbitals = [s for s in stations if s["id"].startswith("STN-PLANET-EARTH-ORB")]
+    pluto_starbases = [s for s in stations if s["id"].startswith("STN-PLANET-PLUTO")]
+    moon_orbitals = [s for s in stations if s["id"].startswith("STN-MOON-MOON")]
+
+    assert len(earth_starbases) >= 1
+    assert len(earth_orbitals) >= 1
+    assert len(pluto_starbases) >= 1
+    assert len(moon_orbitals) >= 1
+
+    asteroid_stations = [s for s in stations if s["body_type"] == "asteroid"]
+    assert asteroid_stations
+    assert all("xlarge" in s["allowed_size_classes"] for s in asteroid_stations)
+
+    assert any(station["name"].startswith("The ") for station in stations)
+    assert any("-" in station["name"] for station in stations)
 
 
 def test_invalid_seed_catalog_raises():
@@ -311,4 +332,35 @@ def test_build_stations_validates_invalid_base_names_singular():
             mock_load.return_value = {"base_names_singular": "not-a-list"}
             with pytest.raises(ValueError, match="naming.base_names_singular"):
                 build_stations(catalog_path=catalog_path)
+
+
+def test_build_ships_applies_cargo_crew_and_passenger_rules():
+    stations = build_stations()
+    ships = build_ships(stations=stations, count=500, seed=9001)
+
+    assert ships
+    assert any(ship["faction"] == "merchant" for ship in ships)
+
+    for ship in ships:
+        faction = ship["faction"]
+        displacement = float(ship["displacement_million_m3"])
+        crew = int(ship["crew"])
+        passengers = int(ship["passengers"])
+
+        if faction == "merchant":
+            assert ship["cargo"] != ""
+            assert 0 <= passengers <= 10_000
+        elif faction == "government":
+            assert ship["cargo"] == ""
+            assert 10 <= passengers <= 500
+        else:
+            assert ship["cargo"] == ""
+            assert passengers == 0
+
+        if faction == "bounty_hunter":
+            assert 1 <= crew <= 5
+        else:
+            assert crew >= 1
+            assert crew >= int(displacement * 200)
+            assert crew <= int(displacement * 500)
 

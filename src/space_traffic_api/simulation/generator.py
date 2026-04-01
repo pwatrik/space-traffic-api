@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import queue
 import random
 import threading
@@ -132,6 +133,8 @@ class DepartureGenerator(threading.Thread):
         self._next_db_size_check_at = 0.0
         self._next_ship_sequence = self._store.max_ship_sequence() + 1
         self._age_update_accumulator_days: float = 0.0
+        self._startup_merchants_launched = False
+        self._merchant_idle_pause_seconds = 120
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -172,6 +175,10 @@ class DepartureGenerator(threading.Thread):
             interval_seconds = max(0.2, 60.0 / float(rate))
             tick_time = self._current_tick_time(state)
 
+            if not self._startup_merchants_launched:
+                self._launch_all_merchants_at_startup(state=state, scenario=scenario, tick_time=tick_time)
+                self._startup_merchants_launched = True
+
             arrived_ships = self._store.complete_ship_arrivals_with_details(tick_time.isoformat())
             self._apply_lifecycle(
                 interval_seconds=interval_seconds,
@@ -198,18 +205,7 @@ class DepartureGenerator(threading.Thread):
             if "delayed_insert" in event.get("fault_flags", []):
                 if self._stop_event.wait(timeout=1.5):
                     break
-
-            row_id = self._store.insert_departure(event)
-            event["id"] = row_id
-            self._store.trim_departures(state["retention_max_rows"])
-
-            now_monotonic = time.monotonic()
-            if now_monotonic >= self._next_db_size_check_at:
-                db_max_size_mb = int(state.get("db_max_size_mb", 512))
-                self._store.enforce_db_size_limit(max_db_size_bytes=db_max_size_mb * 1024 * 1024)
-                self._next_db_size_check_at = now_monotonic + 5.0
-
-            self._publish_event(event)
+            self._persist_and_publish_event(event, state)
 
             self._advance_sim_time(state, tick_time, interval_seconds)
 
@@ -233,6 +229,7 @@ class DepartureGenerator(threading.Thread):
             self._set_sim_time(state)
             self._event_counter = 0
             self._last_event_uid = ""
+            self._startup_merchants_launched = False
 
     def _set_sim_time(self, state: dict[str, Any]) -> None:
         raw = state.get("deterministic_start_time", "2150-01-01T00:00:00Z")
@@ -735,22 +732,44 @@ class DepartureGenerator(threading.Thread):
                 new_ship_name = self._rng.choice(ship_names_singular)
             else:
                 new_ship_name = f"{self._rng.choice(adjectives)} {self._rng.choice(nouns)}"
+            displacement = round(
+                self._rng.uniform(
+                    float(choice.get("displacement_min_million_m3", 0.8)),
+                    float(choice.get("displacement_max_million_m3", 22.0)),
+                ),
+                3,
+            )
+
+            built_faction = str(choice.get("faction") or faction)
+            if built_faction == "bounty_hunter":
+                crew = self._rng.randint(1, 5)
+            else:
+                crew_min = max(1, int(math.ceil(displacement * 200.0)))
+                crew_max = max(crew_min, int(math.floor(displacement * 500.0)))
+                crew = self._rng.randint(crew_min, crew_max)
+
+            if built_faction == "merchant":
+                cargo = self._rng.choice(cargo_types)
+                passengers = self._rng.randint(0, 10_000)
+            elif built_faction == "government":
+                cargo = ""
+                passengers = self._rng.randint(10, 500)
+            else:
+                cargo = ""
+                passengers = 0
+
             ship = {
                 "id": ship_id,
                 "name": new_ship_name,
-                "faction": str(choice.get("faction") or faction),
+                "faction": built_faction,
                 "ship_type": str(choice.get("name") or "Auxiliary"),
                 "size_class": size_class,
-                "displacement_million_m3": round(
-                    self._rng.uniform(
-                        float(choice.get("displacement_min_million_m3", 0.8)),
-                        float(choice.get("displacement_max_million_m3", 22.0)),
-                    ),
-                    3,
-                ),
+                "displacement_million_m3": displacement,
                 "home_station_id": home_station_id,
                 "captain_name": f"{self._rng.choice(captain_first)} {self._rng.choice(captain_last)}",
-                "cargo": self._rng.choice(cargo_types),
+                "cargo": cargo,
+                "crew": crew,
+                "passengers": passengers,
             }
             self._store.seed_ships([ship])
             self._store.seed_ship_states([ship])
@@ -806,7 +825,7 @@ class DepartureGenerator(threading.Thread):
         scenario: dict[str, Any] | None,
         tick_time: datetime,
     ) -> dict[str, Any] | None:
-        ship = self._pick_ship(scenario)
+        ship = self._pick_ship(scenario, tick_time)
         if not ship:
             return None
 
@@ -818,18 +837,43 @@ class DepartureGenerator(threading.Thread):
         if self._is_scoped_interrupt(scenario, ship, src, dst):
             return None
 
-        departure_time = tick_time
-        eta = self.estimate_arrival(departure_time, src, dst)
-
-        departed = self._store.begin_ship_transit(
+        event = self._create_departure_event(
             ship_id=ship["ship_id"],
             source_station_id=src,
             destination_station_id=dst,
+            departure_time=tick_time,
+            scenario=scenario,
+        )
+        if event is None:
+            return None
+        return event
+
+    def _create_departure_event(
+        self,
+        ship_id: str,
+        source_station_id: str,
+        destination_station_id: str,
+        departure_time: datetime,
+        scenario: dict[str, Any] | None,
+        ship_faction: str | None = None,
+    ) -> dict[str, Any] | None:
+        eta = self.estimate_arrival(departure_time, source_station_id, destination_station_id)
+
+        departed = self._store.begin_ship_transit(
+            ship_id=ship_id,
+            source_station_id=source_station_id,
+            destination_station_id=destination_station_id,
             departure_time=departure_time.isoformat(),
             est_arrival_time=eta.isoformat(),
         )
         if not departed:
             return None
+
+        if ship_faction == "merchant":
+            source_station = self._station_lookup.get(source_station_id) or {}
+            source_cargo = str(source_station.get("cargo_type") or "").strip()
+            if source_cargo:
+                self._store.set_ship_cargo(ship_id=ship_id, cargo=source_cargo)
 
         self._event_counter += 1
         event_uid = f"EVT-{self._event_counter:09d}-{self._rng.getrandbits(32):08x}"
@@ -838,9 +882,9 @@ class DepartureGenerator(threading.Thread):
         payload = {
             "event_uid": event_uid,
             "departure_time": departure_time.isoformat(),
-            "ship_id": ship["ship_id"],
-            "source_station_id": src,
-            "destination_station_id": dst,
+            "ship_id": ship_id,
+            "source_station_id": source_station_id,
+            "destination_station_id": destination_station_id,
             "est_arrival_time": eta.isoformat(),
             "scenario": scenario["name"] if scenario else "baseline",
         }
@@ -852,8 +896,57 @@ class DepartureGenerator(threading.Thread):
             "payload_json": json.dumps(payload),
         }
 
-    def _pick_ship(self, scenario: dict[str, Any] | None) -> dict[str, Any] | None:
+    def _launch_all_merchants_at_startup(
+        self,
+        state: dict[str, Any],
+        scenario: dict[str, Any] | None,
+        tick_time: datetime,
+    ) -> None:
+        candidates = [
+            ship
+            for ship in self._store.list_available_ships()
+            if ship.get("faction") == "merchant" and ship.get("current_station_id")
+        ]
+        self._rng.shuffle(candidates)
+
+        for ship in candidates:
+            src = ship["current_station_id"]
+            dst = self._pick_destination(ship, src, scenario)
+            if not dst:
+                continue
+            if self._is_scoped_interrupt(scenario, ship, src, dst):
+                continue
+
+            event = self._create_departure_event(
+                ship_id=ship["ship_id"],
+                source_station_id=src,
+                destination_station_id=dst,
+                departure_time=tick_time,
+                scenario=scenario,
+                ship_faction=str(ship.get("faction") or ""),
+            )
+            if event is None:
+                continue
+
+            self._apply_faults(event, state)
+            self._persist_and_publish_event(event, state)
+
+    def _persist_and_publish_event(self, event: dict[str, Any], state: dict[str, Any]) -> None:
+        row_id = self._store.insert_departure(event)
+        event["id"] = row_id
+        self._store.trim_departures(state["retention_max_rows"])
+
+        now_monotonic = time.monotonic()
+        if now_monotonic >= self._next_db_size_check_at:
+            db_max_size_mb = int(state.get("db_max_size_mb", 512))
+            self._store.enforce_db_size_limit(max_db_size_bytes=db_max_size_mb * 1024 * 1024)
+            self._next_db_size_check_at = now_monotonic + 5.0
+
+        self._publish_event(event)
+
+    def _pick_ship(self, scenario: dict[str, Any] | None, tick_time: datetime) -> dict[str, Any] | None:
         candidates = self._store.list_available_ships()
+        candidates = [ship for ship in candidates if self._is_ship_departure_ready(ship, tick_time)]
         if not candidates:
             return None
 
@@ -899,6 +992,17 @@ class DepartureGenerator(threading.Thread):
             if pick <= threshold:
                 return candidates[idx]
         return candidates[-1]
+
+    def _is_ship_departure_ready(self, ship: dict[str, Any], tick_time: datetime) -> bool:
+        if ship.get("faction") != "merchant":
+            return True
+
+        updated_at = self._parse_iso(ship.get("updated_at"))
+        if updated_at is None:
+            return True
+
+        earliest = updated_at + timedelta(seconds=self._merchant_idle_pause_seconds)
+        return tick_time >= earliest
 
     def _pick_destination(
         self,

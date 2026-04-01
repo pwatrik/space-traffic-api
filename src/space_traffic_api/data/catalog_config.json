@@ -78,7 +78,7 @@
         "id_prefix": "STN-AST",
         "name_template": "{body} Hub",
         "parent_body": "Asteroid Belt",
-        "allowed_size_classes": ["small", "medium"]
+        "allowed_size_classes": ["small", "medium", "large", "xlarge"]
       }
     ]
   },

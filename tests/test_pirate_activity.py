@@ -308,6 +308,21 @@ def test_pirates_destroy_merchants_arriving_in_affected_zone(monkeypatch):
                 ),
                 None,
             )
+
+            if ship is None:
+                # Merchants now launch at startup. Force arrivals, then pick one that can be routed to Earth.
+                store.complete_ship_arrivals_with_details("2999-01-01T00:00:00+00:00")
+                states = store.list_ship_states(status="active", in_transit=False, limit=5000)
+                ship = next(
+                    (
+                        row
+                        for row in states
+                        if row.get("faction") == "merchant"
+                        and row.get("current_station_id")
+                        and row.get("current_station_id") != "STN-PLANET-EARTH"
+                    ),
+                    None,
+                )
             assert ship is not None
 
             now = time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime())

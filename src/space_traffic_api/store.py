@@ -28,6 +28,7 @@ class SQLiteStore:
                     body_name TEXT NOT NULL,
                     body_type TEXT NOT NULL,
                     parent_body TEXT NOT NULL,
+                    cargo_type TEXT NOT NULL DEFAULT '',
                     allowed_size_classes TEXT NOT NULL DEFAULT '[]'
                 );
 
@@ -40,7 +41,9 @@ class SQLiteStore:
                     displacement_million_m3 REAL NOT NULL,
                     home_station_id TEXT NOT NULL,
                     captain_name TEXT NOT NULL,
-                    cargo TEXT NOT NULL
+                    cargo TEXT NOT NULL DEFAULT '',
+                    crew INTEGER NOT NULL DEFAULT 0,
+                    passengers INTEGER NOT NULL DEFAULT 0
                 );
 
                 CREATE TABLE IF NOT EXISTS ship_state (
@@ -98,7 +101,11 @@ class SQLiteStore:
             )
             # Backfill columns for pre-migration databases where tables already existed.
             self._ensure_column("stations", "allowed_size_classes", "TEXT NOT NULL DEFAULT '[]'")
+            self._ensure_column("stations", "cargo_type", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column("ships", "size_class", "TEXT NOT NULL DEFAULT 'medium'")
+            self._ensure_column("ships", "cargo", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column("ships", "crew", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column("ships", "passengers", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column("ship_state", "ship_age_days", "REAL NOT NULL DEFAULT 0")
             self._context.conn.commit()
 
@@ -117,6 +124,9 @@ class SQLiteStore:
 
     def seed_ships(self, ships: list[dict[str, Any]]) -> None:
         self.catalog.seed_ships(ships)
+
+    def set_ship_cargo(self, ship_id: str, cargo: str) -> bool:
+        return self.catalog.set_ship_cargo(ship_id=ship_id, cargo=cargo)
 
     def seed_ship_states(self, ships: list[dict[str, Any]]) -> None:
         self.fleet.seed_ship_states(ships)
