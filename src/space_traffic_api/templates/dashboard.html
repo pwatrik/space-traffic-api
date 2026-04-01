@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Space Traffic Console</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/dashboard.css">
+  </head>
+  <body>
+    <div class="bg-orbit bg-orbit-a"></div>
+    <div class="bg-orbit bg-orbit-b"></div>
+    <div class="toast-tray" id="toast-tray" aria-live="polite" aria-atomic="true"></div>
+
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Embedded Ops UI</p>
+        <h1>Space Traffic Console</h1>
+        <p class="subtitle">Live simulation visibility with zero extra services.</p>
+      </div>
+      <div class="hero-actions">
+        <a class="btn" href="/openapi.yaml">OpenAPI</a>
+        <a class="btn" href="/healthz">Health</a>
+      </div>
+    </header>
+
+    <main class="grid">
+      <section class="card stats" id="kpis">
+        <h2>Overview</h2>
+        <div class="kpi-grid">
+          <article><span>Ships</span><strong id="kpi-ships">-</strong></article>
+          <article><span>In Transit</span><strong id="kpi-in-transit">-</strong></article>
+          <article><span>Stations</span><strong id="kpi-stations">-</strong></article>
+          <article><span>Departures</span><strong id="kpi-departures">-</strong></article>
+          <article><span>Control Events</span><strong id="kpi-control-events">-</strong></article>
+          <article><span>Pirate Strength</span><strong id="kpi-pirates">-</strong></article>
+        </div>
+        <p class="meta" id="scenario-meta">Scenario: loading...</p>
+      </section>
+
+      <section class="card chart-strip">
+        <h2>Live Trends</h2>
+        <div class="chart-grid">
+          <article>
+            <h3>Departures / Minute</h3>
+            <canvas id="departures-chart" width="560" height="110"></canvas>
+          </article>
+          <article>
+            <h3>Pirate Strength</h3>
+            <canvas id="pirate-chart" width="560" height="110"></canvas>
+          </article>
+        </div>
+      </section>
+
+      <section class="card controls-card">
+        <h2>Simulation Controls</h2>
+
+        <div class="control-grid">
+          <div class="control-block">
+            <h3>Config + Reset</h3>
+            <div class="inline-row">
+              <label class="check-label"><input type="checkbox" id="cfg-deterministic"> Deterministic mode</label>
+              <label>Seed <input id="cfg-seed" type="number" placeholder="1337"></label>
+              <button class="btn" id="cfg-save">Apply</button>
+              <button class="btn danger" id="ctl-reset">Reset</button>
+            </div>
+            <p class="meta control-status-row"><span class="status-indicator idle" id="control-status">idle</span><span id="control-status-detail">No pending control actions.</span></p>
+          </div>
+
+          <div class="control-block">
+            <h3>Scenario</h3>
+            <div class="inline-row">
+              <label>Name
+                <select id="scenario-name"></select>
+              </label>
+              <label>Intensity <input id="scenario-intensity" type="number" min="0" max="5" step="0.1" value="1.0"></label>
+              <label>Duration(s) <input id="scenario-duration" type="number" min="1" value="300"></label>
+              <button class="btn" id="scenario-activate">Activate</button>
+              <button class="btn" id="scenario-deactivate">Deactivate</button>
+            </div>
+          </div>
+
+          <div class="control-block">
+            <h3>Faults</h3>
+            <div class="inline-row">
+              <label>Name
+                <select id="fault-name"></select>
+              </label>
+              <label>Active
+                <select id="fault-active-name">
+                  <option value="">none active</option>
+                </select>
+              </label>
+              <label>Rate <input id="fault-rate" type="number" min="0" max="1" step="0.01" value="0.2"></label>
+              <label>Duration(s) <input id="fault-duration" type="number" min="0" value="120"></label>
+              <button class="btn" id="fault-activate">Activate</button>
+              <button class="btn" id="fault-deactivate">Clear Selected</button>
+              <button class="btn" id="fault-clear">Clear All</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="control-summary-grid">
+          <article class="summary-block">
+            <h3>Active Scenario</h3>
+            <div id="active-scenario-summary" class="summary-content">Loading...</div>
+          </article>
+          <article class="summary-block">
+            <h3>Active Faults</h3>
+            <div id="active-faults-summary" class="summary-content">Loading...</div>
+          </article>
+          <article class="summary-block">
+            <h3>Operator Activity</h3>
+            <div class="summary-content summary-history">
+              <p class="summary-empty" id="operator-last-action">No control actions yet.</p>
+              <ul id="operator-action-history" class="action-history"></ul>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="card table-card">
+        <h2>Fleet State (Top 20)</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Ship</th>
+              <th>Faction</th>
+              <th>Status</th>
+              <th>Transit</th>
+              <th>From</th>
+              <th>To</th>
+            </tr>
+          </thead>
+          <tbody id="ship-state-body"></tbody>
+        </table>
+      </section>
+
+      <section class="card stream-card">
+        <div class="stream-header">
+          <h2>Live Departures</h2>
+          <span class="status-indicator idle" id="departures-stream-status">connecting</span>
+        </div>
+        <pre id="departures-log" class="log"></pre>
+      </section>
+
+      <section class="card stream-card">
+        <div class="stream-header">
+          <h2>Control Events</h2>
+          <span class="status-indicator idle" id="control-stream-status">connecting</span>
+        </div>
+        <pre id="control-log" class="log"></pre>
+      </section>
+
+      <section class="card explorer-card">
+        <h2>Data Explorer</h2>
+        <div class="explorer-grid">
+          <div>
+            <div class="table-headline">
+              <h3>Ships</h3>
+              <div class="inline-row compact">
+                <label>Faction
+                  <select id="ships-faction">
+                    <option value="">all</option>
+                    <option value="merchant">merchant</option>
+                    <option value="government">government</option>
+                    <option value="military">military</option>
+                    <option value="bounty_hunter">bounty_hunter</option>
+                  </select>
+                </label>
+                <label>Limit
+                  <select id="ships-limit">
+                    <option>10</option>
+                    <option selected>20</option>
+                    <option>50</option>
+                  </select>
+                </label>
+                <button class="btn" id="ships-refresh">Refresh</button>
+              </div>
+            </div>
+            <table class="mini-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Name</th>
+                  <th>Faction</th>
+                  <th>Type</th>
+                  <th>Cargo</th>
+                </tr>
+              </thead>
+              <tbody id="ships-body"></tbody>
+            </table>
+            <div class="pager" id="ships-pager">
+              <button class="btn" id="ships-prev">Prev</button>
+              <span id="ships-page-meta">Page 1</span>
+              <button class="btn" id="ships-next">Next</button>
+            </div>
+          </div>
+
+          <div>
+            <div class="table-headline">
+              <h3>Stations</h3>
+              <div class="inline-row compact">
+                <label>Body
+                  <select id="stations-body-type">
+                    <option value="">all</option>
+                    <option value="planet">planet</option>
+                    <option value="moon">moon</option>
+                    <option value="asteroid">asteroid</option>
+                  </select>
+                </label>
+                <label>Limit
+                  <select id="stations-limit">
+                    <option>10</option>
+                    <option selected>20</option>
+                    <option>50</option>
+                  </select>
+                </label>
+                <button class="btn" id="stations-refresh">Refresh</button>
+              </div>
+            </div>
+            <table class="mini-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Name</th>
+                  <th>Body</th>
+                  <th>Type</th>
+                  <th>Parent</th>
+                </tr>
+              </thead>
+              <tbody id="stations-body"></tbody>
+            </table>
+            <div class="pager" id="stations-pager">
+              <button class="btn" id="stations-prev">Prev</button>
+              <span id="stations-page-meta">Page 1</span>
+              <button class="btn" id="stations-next">Next</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/static/dashboard.js"></script>
+  </body>
+</html>

@@ -17,6 +17,7 @@ The machine-readable spec is available at `GET /openapi.yaml` (no auth required)
 - **Event streaming** — Polling (`/departures`) and SSE (`/departures/stream`); same for control events.
 - **Control plane** — Deterministic replay, named scenario bursts, fault injection, and reset.
 - **Pirate activity** — Localized risk zones suppressed by bounty hunter arrivals; strength tracked in `/config`.
+- **Embedded dashboard** — Operational UI at `/ui` with live streams and fleet snapshot.
 
 ## Run Locally
 
@@ -27,6 +28,8 @@ python -m venv .venv
 ```
 
 Server starts on `http://localhost:8000`.
+
+Dashboard starts on `http://localhost:8000/ui`.
 
 ## Run In Container
 
@@ -44,6 +47,12 @@ No authentication is required. All endpoints are public.
 ## API Reference
 
 ### Health
+
+#### `GET /`
+Redirects to `/ui`.
+
+#### `GET /ui`
+Embedded operational dashboard (live SSE feeds + key metrics + top fleet state).
 
 #### `GET /healthz`
 Public endpoint.
