@@ -10,8 +10,17 @@ class FleetRepository:
     def __init__(self, context: StorageContext):
         self._context = context
 
-    def seed_ship_states(self, ships: list[dict[str, Any]]) -> None:
-        now = datetime.now(UTC).isoformat()
+    def seed_ship_states(self, ships: list[dict[str, Any]], now_iso: str | None = None) -> None:
+        if now_iso:
+            try:
+                parsed_now = datetime.fromisoformat(now_iso.replace("Z", "+00:00"))
+                if parsed_now.tzinfo is None:
+                    parsed_now = parsed_now.replace(tzinfo=UTC)
+                now = parsed_now.astimezone(UTC).isoformat()
+            except ValueError:
+                now = datetime.now(UTC).isoformat()
+        else:
+            now = datetime.now(UTC).isoformat()
         rows = [
             {
                 "ship_id": ship["id"],
@@ -133,11 +142,11 @@ class FleetRepository:
             rows = self._context.conn.execute(query).fetchall()
         return [dict(row) for row in rows]
 
-    def increment_ship_age(self, elapsed_days: float) -> int:
+    def increment_ship_age(self, elapsed_days: float, now_iso: str | None = None) -> int:
         if elapsed_days <= 0:
             return 0
 
-        now = datetime.now(UTC).isoformat()
+        now = now_iso or datetime.now(UTC).isoformat()
         with self._context.lock:
             cur = self._context.conn.execute(
                 """
@@ -152,8 +161,14 @@ class FleetRepository:
             self._context.conn.commit()
             return int(cur.rowcount)
 
-    def deactivate_ship(self, ship_id: str, status: str, current_station_id: str | None = None) -> bool:
-        now = datetime.now(UTC).isoformat()
+    def deactivate_ship(
+        self,
+        ship_id: str,
+        status: str,
+        current_station_id: str | None = None,
+        now_iso: str | None = None,
+    ) -> bool:
+        now = now_iso or datetime.now(UTC).isoformat()
         with self._context.lock:
             cur = self._context.conn.execute(
                 """
@@ -192,8 +207,9 @@ class FleetRepository:
         destination_station_id: str,
         departure_time: str,
         est_arrival_time: str,
+        now_iso: str | None = None,
     ) -> bool:
-        now = datetime.now(UTC).isoformat()
+        now = now_iso or datetime.now(UTC).isoformat()
         with self._context.lock:
             cur = self._context.conn.execute(
                 """
@@ -228,8 +244,8 @@ class FleetRepository:
     def complete_arrivals(self, as_of_time: str) -> int:
         return len(self.complete_arrivals_with_details(as_of_time))
 
-    def complete_arrivals_with_details(self, as_of_time: str) -> list[dict[str, Any]]:
-        now = datetime.now(UTC).isoformat()
+    def complete_arrivals_with_details(self, as_of_time: str, now_iso: str | None = None) -> list[dict[str, Any]]:
+        now = now_iso or datetime.now(UTC).isoformat()
         with self._context.lock:
             arriving_rows = self._context.conn.execute(
                 """
@@ -276,8 +292,8 @@ class FleetRepository:
                 return []
             return [dict(row) for row in arriving_rows]
 
-    def reset_to_home_station(self) -> None:
-        now = datetime.now(UTC).isoformat()
+    def reset_to_home_station(self, now_iso: str | None = None) -> None:
+        now = now_iso or datetime.now(UTC).isoformat()
         with self._context.lock:
             self._context.conn.execute(
                 """

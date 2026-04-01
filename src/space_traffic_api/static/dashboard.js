@@ -13,8 +13,24 @@ function fmtShortJson(obj) {
   }
 }
 
+let simulationNowMs = null;
+
+function updateSimulationNow(isoValue) {
+  if (!isoValue) {
+    return;
+  }
+  const parsed = new Date(isoValue).getTime();
+  if (Number.isFinite(parsed)) {
+    simulationNowMs = parsed;
+  }
+}
+
+function getSimulationNowMs() {
+  return simulationNowMs ?? Date.now();
+}
+
 function fmtTime(value) {
-  const date = value instanceof Date ? value : new Date(value || Date.now());
+  const date = value instanceof Date ? value : new Date(value || getSimulationNowMs());
   return new Intl.DateTimeFormat([], {
     hour: "2-digit",
     minute: "2-digit",
@@ -177,7 +193,7 @@ function setPirateInputValues(values) {
 }
 
 function recordOperatorAction(title, detail, status = "success") {
-  const timestamp = new Date();
+  const timestamp = new Date(getSimulationNowMs());
   operatorActionHistory.unshift({ title, detail, status, timestamp });
   if (operatorActionHistory.length > 8) {
     operatorActionHistory.splice(8);
@@ -210,10 +226,10 @@ function nowMinuteKey(date = new Date()) {
 }
 
 function incrementDepartureMinute(isoTimestamp) {
-  const key = nowMinuteKey(isoTimestamp ? new Date(isoTimestamp) : new Date());
+  const key = nowMinuteKey(isoTimestamp ? new Date(isoTimestamp) : new Date(getSimulationNowMs()));
   departuresByMinute.set(key, (departuresByMinute.get(key) || 0) + 1);
 
-  const cutoff = Date.now() - 30 * 60 * 1000;
+  const cutoff = getSimulationNowMs() - 30 * 60 * 1000;
   for (const k of departuresByMinute.keys()) {
     if (new Date(k).getTime() < cutoff) {
       departuresByMinute.delete(k);
@@ -222,7 +238,7 @@ function incrementDepartureMinute(isoTimestamp) {
 }
 
 function pushPirateStrength(strength) {
-  pirateStrengthHistory.push({ t: Date.now(), v: Number(strength) || 0 });
+  pirateStrengthHistory.push({ t: getSimulationNowMs(), v: Number(strength) || 0 });
   if (pirateStrengthHistory.length > 90) {
     pirateStrengthHistory.splice(0, pirateStrengthHistory.length - 90);
   }
@@ -326,10 +342,11 @@ function renderControlSummary(config, faults) {
 function renderPirateEventSummary(config) {
   const pirateEl = document.getElementById("pirate-event-summary");
   const pirate = config.pirate_event || {};
+  const nowMs = getSimulationNowMs();
 
   if (pirate.active) {
     const elapsedSeconds = pirate.started_at
-      ? Math.floor((Date.now() - new Date(pirate.started_at).getTime()) / 1000)
+      ? Math.floor((nowMs - new Date(pirate.started_at).getTime()) / 1000)
       : 0;
     const elapsedMin = Math.floor(elapsedSeconds / 60);
     const elapsedStr = elapsedMin > 0 ? `${elapsedMin}m` : `${elapsedSeconds}s`;
@@ -343,8 +360,7 @@ function renderPirateEventSummary(config) {
     `;
   } else if (pirate.next_spawn_earliest_at) {
     const nextSpawnDate = new Date(pirate.next_spawn_earliest_at);
-    const nowDate = new Date();
-    const minutesUntil = Math.ceil((nextSpawnDate.getTime() - nowDate.getTime()) / 60000);
+    const minutesUntil = Math.ceil((nextSpawnDate.getTime() - nowMs) / 60000);
     const spawnStr = minutesUntil > 0 ? `in ~${minutesUntil}m` : "soon";
     pirateEl.innerHTML = `<span class="mini-pill">Next spawn ${spawnStr}</span>`;
   } else {
@@ -433,12 +449,15 @@ function renderStations(rows, count, total) {
 }
 
 async function refreshSnapshots() {
-  const [stats, statePayload] = await Promise.all([
+  const [stats, statePayload, config] = await Promise.all([
     requestJson("/stats"),
-    requestJson("/ships/state?limit=20")
+    requestJson("/ships/state?limit=20"),
+    requestJson("/config")
   ]);
+  updateSimulationNow(config.simulation_now);
   setKpis(stats);
   renderShipStates(statePayload.ships || []);
+  renderPirateEventSummary(config);
 }
 
 async function refreshShips() {
@@ -473,6 +492,8 @@ async function loadControlData() {
   document.getElementById("cfg-deterministic").checked = Boolean(config.deterministic_mode);
   const seed = config.deterministic_seed;
   document.getElementById("cfg-seed").value = seed !== null && seed !== undefined ? String(seed) : "";
+  document.getElementById("cfg-time-scale").value = config.simulation_time_scale ?? 1.0;
+  updateSimulationNow(config.simulation_now);
 
   const scenarioSelect = document.getElementById("scenario-name");
   scenarioSelect.innerHTML = "";
@@ -522,9 +543,13 @@ function bindControls() {
       try {
         const deterministicMode = document.getElementById("cfg-deterministic").checked;
         const seedRaw = document.getElementById("cfg-seed").value.trim();
+        const timeScaleRaw = document.getElementById("cfg-time-scale").value.trim();
         const payload = { deterministic_mode: deterministicMode };
         if (seedRaw) {
           payload.deterministic_seed = Number(seedRaw);
+        }
+        if (timeScaleRaw) {
+          payload.simulation_time_scale = Number(timeScaleRaw);
         }
 
         setControlStatus("pending", "Applying runtime configuration...");
@@ -536,7 +561,7 @@ function bindControls() {
         await loadControlData();
         setControlStatus("success", "Runtime configuration updated.");
         appendLog(ctrlLog, "[control] config patched");
-        recordOperatorAction("Config updated", "Deterministic mode and seed saved.");
+        recordOperatorAction("Config updated", `Deterministic mode, seed, and time scale ${payload.simulation_time_scale ?? "unchanged"}.`);
         showToast("success", "Config Applied", "Runtime configuration updated.");
       } catch (err) {
         setControlStatus("error", `Config update failed: ${err}`);

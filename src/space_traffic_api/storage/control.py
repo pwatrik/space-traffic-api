@@ -11,15 +11,21 @@ class ControlRepository:
     def __init__(self, context: StorageContext):
         self._context = context
 
-    def insert_event(self, event_type: str, action: str, payload: dict[str, Any]) -> int:
-        event_time = datetime.now(UTC).isoformat()
+    def insert_event(
+        self,
+        event_type: str,
+        action: str,
+        payload: dict[str, Any],
+        event_time: str | None = None,
+    ) -> int:
+        effective_event_time = event_time or datetime.now(UTC).isoformat()
         with self._context.lock:
             cur = self._context.conn.execute(
                 """
                 INSERT INTO control_events (event_time, event_type, action, payload_json)
                 VALUES (?, ?, ?, ?)
                 """,
-                (event_time, event_type, action, json.dumps(payload)),
+                (effective_event_time, event_type, action, json.dumps(payload)),
             )
             self._context.conn.commit()
             return int(cur.lastrowid)

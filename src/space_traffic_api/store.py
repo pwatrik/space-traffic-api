@@ -128,8 +128,8 @@ class SQLiteStore:
     def set_ship_cargo(self, ship_id: str, cargo: str) -> bool:
         return self.catalog.set_ship_cargo(ship_id=ship_id, cargo=cargo)
 
-    def seed_ship_states(self, ships: list[dict[str, Any]]) -> None:
-        self.fleet.seed_ship_states(ships)
+    def seed_ship_states(self, ships: list[dict[str, Any]], now_iso: str | None = None) -> None:
+        self.fleet.seed_ship_states(ships, now_iso=now_iso)
 
     def list_stations(
         self,
@@ -179,11 +179,22 @@ class SQLiteStore:
     def list_active_ships_for_lifecycle(self) -> list[dict[str, Any]]:
         return self.fleet.list_active_ships_for_lifecycle()
 
-    def increment_ship_age(self, elapsed_days: float) -> int:
-        return self.fleet.increment_ship_age(elapsed_days)
+    def increment_ship_age(self, elapsed_days: float, now_iso: str | None = None) -> int:
+        return self.fleet.increment_ship_age(elapsed_days, now_iso=now_iso)
 
-    def deactivate_ship(self, ship_id: str, status: str, current_station_id: str | None = None) -> bool:
-        return self.fleet.deactivate_ship(ship_id=ship_id, status=status, current_station_id=current_station_id)
+    def deactivate_ship(
+        self,
+        ship_id: str,
+        status: str,
+        current_station_id: str | None = None,
+        now_iso: str | None = None,
+    ) -> bool:
+        return self.fleet.deactivate_ship(
+            ship_id=ship_id,
+            status=status,
+            current_station_id=current_station_id,
+            now_iso=now_iso,
+        )
 
     def max_ship_sequence(self) -> int:
         return self.fleet.max_ship_sequence()
@@ -195,6 +206,7 @@ class SQLiteStore:
         destination_station_id: str,
         departure_time: str,
         est_arrival_time: str,
+        now_iso: str | None = None,
     ) -> bool:
         return self.fleet.begin_transit(
             ship_id=ship_id,
@@ -202,16 +214,17 @@ class SQLiteStore:
             destination_station_id=destination_station_id,
             departure_time=departure_time,
             est_arrival_time=est_arrival_time,
+            now_iso=now_iso,
         )
 
     def complete_ship_arrivals(self, as_of_time: str) -> int:
         return self.fleet.complete_arrivals(as_of_time)
 
-    def complete_ship_arrivals_with_details(self, as_of_time: str) -> list[dict[str, Any]]:
-        return self.fleet.complete_arrivals_with_details(as_of_time)
+    def complete_ship_arrivals_with_details(self, as_of_time: str, now_iso: str | None = None) -> list[dict[str, Any]]:
+        return self.fleet.complete_arrivals_with_details(as_of_time, now_iso=now_iso)
 
-    def reset_ship_states(self) -> None:
-        self.fleet.reset_to_home_station()
+    def reset_ship_states(self, now_iso: str | None = None) -> None:
+        self.fleet.reset_to_home_station(now_iso=now_iso)
 
     def insert_departure(self, event: dict[str, Any]) -> int:
         return self.departures.insert(event)
@@ -251,8 +264,19 @@ class SQLiteStore:
             batch_size=batch_size,
         )
 
-    def insert_control_event(self, event_type: str, action: str, payload: dict[str, Any]) -> int:
-        return self.control.insert_event(event_type=event_type, action=action, payload=payload)
+    def insert_control_event(
+        self,
+        event_type: str,
+        action: str,
+        payload: dict[str, Any],
+        event_time: str | None = None,
+    ) -> int:
+        return self.control.insert_event(
+            event_type=event_type,
+            action=action,
+            payload=payload,
+            event_time=event_time,
+        )
 
     def list_control_events(
         self,
