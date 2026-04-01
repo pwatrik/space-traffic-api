@@ -172,6 +172,8 @@ class DepartureGenerator(threading.Thread):
             effective_min, effective_max = self._effective_rate_bounds(state, scenario)
             rate = self._rng.randint(effective_min, effective_max)
             interval_seconds = max(0.2, 60.0 / float(rate))
+            simulation_time_scale = float(state.get("simulation_time_scale", 1.0) or 1.0)
+            simulated_interval_seconds = interval_seconds * max(0.1, simulation_time_scale)
             tick_time = self._current_tick_time(state)
 
             if not self._startup_merchants_launched:
@@ -180,21 +182,21 @@ class DepartureGenerator(threading.Thread):
 
             arrived_ships = self._store.complete_ship_arrivals_with_details(tick_time.isoformat())
             self._apply_lifecycle(
-                interval_seconds=interval_seconds,
+                interval_seconds=simulated_interval_seconds,
                 tick_time=tick_time,
                 scenario=scenario,
                 arrived_ships=arrived_ships,
             )
 
             if self._is_globally_interrupted(scenario):
-                self._advance_sim_time(state, tick_time, interval_seconds)
+                self._advance_sim_time(tick_time, simulated_interval_seconds)
                 if self._stop_event.wait(timeout=min(1.0, interval_seconds)):
                     break
                 continue
 
             event = self._build_event(state, scenario, tick_time)
             if event is None:
-                self._advance_sim_time(state, tick_time, interval_seconds)
+                self._advance_sim_time(tick_time, simulated_interval_seconds)
                 if self._stop_event.wait(timeout=min(1.0, interval_seconds)):
                     break
                 continue
@@ -206,7 +208,7 @@ class DepartureGenerator(threading.Thread):
                     break
             self._persist_and_publish_event(event, state)
 
-            self._advance_sim_time(state, tick_time, interval_seconds)
+            self._advance_sim_time(tick_time, simulated_interval_seconds)
 
             if self._stop_event.wait(timeout=interval_seconds):
                 break
@@ -231,11 +233,15 @@ class DepartureGenerator(threading.Thread):
             self._startup_merchants_launched = False
 
     def _set_sim_time(self, state: dict[str, Any]) -> None:
-        raw = state.get("deterministic_start_time", "2150-01-01T00:00:00Z")
-        try:
-            self._sim_time = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-        except ValueError:
-            self._sim_time = datetime.now(UTC)
+        if state.get("deterministic_mode"):
+            raw = state.get("deterministic_start_time", "2150-01-01T00:00:00Z")
+            try:
+                self._sim_time = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            except ValueError:
+                self._sim_time = datetime.now(UTC)
+            return
+
+        self._sim_time = datetime.now(UTC)
 
     def _effective_rate_bounds(
         self,
@@ -1079,15 +1085,12 @@ class DepartureGenerator(threading.Thread):
         return False
 
     def _current_tick_time(self, state: dict[str, Any]) -> datetime:
-        if state.get("deterministic_mode"):
-            if self._sim_time is None:
-                self._set_sim_time(state)
-            return self._sim_time
-        return datetime.now(UTC)
+        if self._sim_time is None:
+            self._set_sim_time(state)
+        return self._sim_time
 
-    def _advance_sim_time(self, state: dict[str, Any], tick_time: datetime, interval_seconds: float) -> None:
-        if state.get("deterministic_mode"):
-            self._sim_time = tick_time + timedelta(seconds=interval_seconds)
+    def _advance_sim_time(self, tick_time: datetime, interval_seconds: float) -> None:
+        self._sim_time = tick_time + timedelta(seconds=interval_seconds)
 
     def estimate_arrival(self, departure_time: datetime, source: str, destination: str) -> datetime:
         if self._rng is None:

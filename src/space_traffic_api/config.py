@@ -30,6 +30,7 @@ class AppConfig:
     db_max_size_mb: int
     disable_generator: bool
     merchant_idle_pause_seconds: int
+    simulation_time_scale: float
 
     @staticmethod
     def from_env() -> "AppConfig":
@@ -45,4 +46,5 @@ class AppConfig:
             db_max_size_mb=_as_int(os.getenv("SPACE_TRAFFIC_DB_MAX_SIZE_MB"), 512),
             disable_generator=_as_bool(os.getenv("SPACE_TRAFFIC_DISABLE_GENERATOR"), False),
             merchant_idle_pause_seconds=_as_int(os.getenv("SPACE_TRAFFIC_MERCHANT_IDLE_PAUSE_SECONDS"), 120),
+            simulation_time_scale=float(os.getenv("SPACE_TRAFFIC_SIMULATION_TIME_SCALE", "1.0")),
         )
