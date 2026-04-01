@@ -236,6 +236,7 @@
     },
     "pirate_activity": {
       "enabled": true,
+      "spawn_probability_per_day": 1.0,
       "allowed_anchors": [
         "Mercury",
         "Venus",
@@ -249,16 +250,16 @@
         "Pluto"
       ],
       "strength_start": 1.0,
-      "strength_end_threshold": 0.5,
-      "ambient_strength_decay_per_day": 0.005,
+      "strength_end_threshold": 0.3,
+      "ambient_strength_decay_per_day": 0.03,
       "merchant_arrival_base_destruction_chance": 0.04,
       "merchant_arrival_destruction_multiplier": 4.0,
       "bounty_hunter_response_bias": 0.9,
       "bounty_hunter_idle_departure_multiplier": 0.2,
       "bounty_hunter_active_departure_multiplier": 6.0,
       "strength_decay_per_bounty_hunter_arrival": 0.02,
-      "respawn_min_days": 10,
-      "respawn_max_days": 30
+      "respawn_min_days": 0.2,
+      "respawn_max_days": 1.0
     }
   }
 }

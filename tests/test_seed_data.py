@@ -110,7 +110,7 @@ def test_default_seed_catalog_builds_expected_ids():
     assert lifecycle["build_queue"]["enabled"] is True
     assert lifecycle["pirate_activity"]["enabled"] is True
     assert lifecycle["pirate_activity"]["strength_start"] == 1.0
-    assert lifecycle["pirate_activity"]["strength_end_threshold"] == 0.5
+    assert lifecycle["pirate_activity"]["strength_end_threshold"] == 0.3
 
 
 def test_custom_seed_catalog_defaults_are_applied():

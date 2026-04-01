@@ -121,6 +121,61 @@ const departuresByMinute = new Map();
 const pirateStrengthHistory = [];
 const operatorActionHistory = [];
 
+const PIRATE_PRESETS = {
+  calm: {
+    pirate_spawn_probability_per_day: 0.35,
+    pirate_strength_decay_per_day: 0.05,
+    pirate_strength_end_threshold: 0.45,
+    pirate_strength_start: 0.8,
+    pirate_respawn_min_days: 0.8,
+    pirate_respawn_max_days: 2.0
+  },
+  balanced: {
+    pirate_spawn_probability_per_day: 0.65,
+    pirate_strength_decay_per_day: 0.04,
+    pirate_strength_end_threshold: 0.35,
+    pirate_strength_start: 1.0,
+    pirate_respawn_min_days: 0.4,
+    pirate_respawn_max_days: 1.2
+  },
+  aggressive: {
+    pirate_spawn_probability_per_day: 0.85,
+    pirate_strength_decay_per_day: 0.03,
+    pirate_strength_end_threshold: 0.25,
+    pirate_strength_start: 1.2,
+    pirate_respawn_min_days: 0.2,
+    pirate_respawn_max_days: 0.8
+  },
+  chaos: {
+    pirate_spawn_probability_per_day: 1.0,
+    pirate_strength_decay_per_day: 0.02,
+    pirate_strength_end_threshold: 0.15,
+    pirate_strength_start: 1.4,
+    pirate_respawn_min_days: 0.1,
+    pirate_respawn_max_days: 0.4
+  }
+};
+
+function getPirateInputValues() {
+  return {
+    pirate_spawn_probability_per_day: Number(document.getElementById("pirate-spawn-prob").value || "1.0"),
+    pirate_strength_decay_per_day: Number(document.getElementById("pirate-decay").value || "0.03"),
+    pirate_strength_end_threshold: Number(document.getElementById("pirate-end-threshold").value || "0.3"),
+    pirate_strength_start: Number(document.getElementById("pirate-strength-start").value || "1.0"),
+    pirate_respawn_min_days: Number(document.getElementById("pirate-respawn-min").value || "0.2"),
+    pirate_respawn_max_days: Number(document.getElementById("pirate-respawn-max").value || "1.0")
+  };
+}
+
+function setPirateInputValues(values) {
+  document.getElementById("pirate-spawn-prob").value = values.pirate_spawn_probability_per_day;
+  document.getElementById("pirate-decay").value = values.pirate_strength_decay_per_day;
+  document.getElementById("pirate-end-threshold").value = values.pirate_strength_end_threshold;
+  document.getElementById("pirate-strength-start").value = values.pirate_strength_start;
+  document.getElementById("pirate-respawn-min").value = values.pirate_respawn_min_days;
+  document.getElementById("pirate-respawn-max").value = values.pirate_respawn_max_days;
+}
+
 function recordOperatorAction(title, detail, status = "success") {
   const timestamp = new Date();
   operatorActionHistory.unshift({ title, detail, status, timestamp });
@@ -266,6 +321,33 @@ function renderControlSummary(config, faults) {
         `<span class="mini-pill"><strong>${escapeHtml(name)}</strong> rate ${escapeHtml(value.rate)}</span>`
     )
     .join("")}</div>`;
+
+function renderPirateEventSummary(config) {
+  const pirateEl = document.getElementById("pirate-event-summary");
+  const pirate = config.pirate_event || {};
+  
+  if (pirate.active) {
+    const elapsedSeconds = pirate.started_at ? Math.floor((Date.now() - new Date(pirate.started_at).getTime()) / 1000) : 0;
+    const elapsedMin = Math.floor(elapsedSeconds / 60);
+    const elapsedStr = elapsedMin > 0 ? `${elapsedMin}m` : `${elapsedSeconds}s`;
+    pirateEl.innerHTML = `
+      <div class="pill-row">
+        <span class="mini-pill status-active"><strong>ACTIVE</strong></span>
+        <span class="mini-pill"><strong>${escapeHtml(pirate.anchor_body || "?")}</strong></span>
+        <span class="mini-pill">strength ${(pirate.strength || 0).toFixed(2)}</span>
+        <span class="mini-pill">duration ${elapsedStr}</span>
+      </div>
+    `;
+  } else if (pirate.next_spawn_earliest_at) {
+    const nextSpawnDate = new Date(pirate.next_spawn_earliest_at);
+    const nowDate = new Date();
+    const minutesUntil = Math.ceil((nextSpawnDate.getTime() - nowDate.getTime()) / 60000);
+    const spawnStr = minutesUntil > 0 ? `in ~${minutesUntil}m` : "soon";
+    pirateEl.innerHTML = `<span class="mini-pill">Next spawn ${spawnStr}</span>`;
+  } else {
+    pirateEl.innerHTML = '<span class="summary-empty">Pirate event inactive.</span>';
+  }
+}
 }
 
 function setKpis(stats) {
@@ -407,7 +489,18 @@ async function loadControlData() {
     option.textContent = `${entry.name} (${entry.default_rate})`;
     faultSelect.appendChild(option);
   });
+
+  setPirateInputValues({
+    pirate_spawn_probability_per_day: config.pirate_spawn_probability_per_day ?? 1.0,
+    pirate_strength_decay_per_day: config.pirate_strength_decay_per_day ?? 0.03,
+    pirate_strength_end_threshold: config.pirate_strength_end_threshold ?? 0.3,
+    pirate_strength_start: config.pirate_strength_start ?? 1.0,
+    pirate_respawn_min_days: config.pirate_respawn_min_days ?? 0.2,
+    pirate_respawn_max_days: config.pirate_respawn_max_days ?? 1.0
+  });
+
   renderControlSummary(config, faults);
+  renderPirateEventSummary(config);
 }
 
 function bindControls() {
@@ -419,6 +512,8 @@ function bindControls() {
   const faultActivateButton = document.getElementById("fault-activate");
   const faultDeactivateButton = document.getElementById("fault-deactivate");
   const faultClearButton = document.getElementById("fault-clear");
+  const pirateApplyButton = document.getElementById("pirate-apply");
+  const piratePresetApplyButton = document.getElementById("pirate-preset-apply");
 
   cfgSaveButton.addEventListener("click", async () => {
     await withButtonBusy(cfgSaveButton, "Applying...", async () => {
@@ -616,6 +711,51 @@ function bindControls() {
         appendLog(ctrlLog, `[control-error] ${err}`);
         recordOperatorAction("Clear all faults failed", String(err), "error");
         showToast("error", "Fault Clear Failed", String(err));
+      }
+    });
+  });
+
+  piratePresetApplyButton.addEventListener("click", () => {
+    const presetName = document.getElementById("pirate-preset").value;
+    if (presetName === "custom") {
+      showToast("warn", "Custom Selected", "Pick a named preset to populate the pirate controls.");
+      return;
+    }
+
+    const preset = PIRATE_PRESETS[presetName];
+    if (!preset) {
+      showToast("error", "Preset Missing", `Unknown preset: ${presetName}`);
+      return;
+    }
+
+    setPirateInputValues(preset);
+    recordOperatorAction("Pirate preset loaded", `${presetName} values loaded into inputs.`);
+    showToast("success", "Preset Loaded", `${presetName} preset loaded. Click Apply to push it live.`);
+  });
+
+  pirateApplyButton.addEventListener("click", async () => {
+    await withButtonBusy(pirateApplyButton, "Applying...", async () => {
+      try {
+        const payload = getPirateInputValues();
+        setControlStatus("pending", "Applying pirate activity settings...");
+        await requestJson("/config", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        await loadControlData();
+        setControlStatus("success", "Pirate activity settings updated.");
+        appendLog(ctrlLog, "[control] pirate settings patched");
+        recordOperatorAction(
+          "Pirate settings updated",
+          `Spawn ${payload.pirate_spawn_probability_per_day.toFixed(2)}, respawn ${payload.pirate_respawn_min_days}-${payload.pirate_respawn_max_days} days.`
+        );
+        showToast("success", "Pirate Config Applied", "Activity settings updated. New events will use these parameters.");
+      } catch (err) {
+        setControlStatus("error", `Pirate settings update failed: ${err}`);
+        appendLog(ctrlLog, `[control-error] ${err}`);
+        recordOperatorAction("Pirate settings failed", String(err), "error");
+        showToast("error", "Pirate Config Failed", String(err));
       }
     });
   });
