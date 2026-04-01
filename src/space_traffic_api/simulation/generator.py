@@ -134,7 +134,6 @@ class DepartureGenerator(threading.Thread):
         self._next_ship_sequence = self._store.max_ship_sequence() + 1
         self._age_update_accumulator_days: float = 0.0
         self._startup_merchants_launched = False
-        self._merchant_idle_pause_seconds = 120
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -843,6 +842,7 @@ class DepartureGenerator(threading.Thread):
             destination_station_id=dst,
             departure_time=tick_time,
             scenario=scenario,
+            ship_faction=str(ship.get("faction") or ""),
         )
         if event is None:
             return None
@@ -946,12 +946,14 @@ class DepartureGenerator(threading.Thread):
 
     def _pick_ship(self, scenario: dict[str, Any] | None, tick_time: datetime) -> dict[str, Any] | None:
         candidates = self._store.list_available_ships()
-        candidates = [ship for ship in candidates if self._is_ship_departure_ready(ship, tick_time)]
+        runtime_snap = self._runtime.snapshot()
+        merchant_idle_pause_seconds = int(runtime_snap.get("merchant_idle_pause_seconds", 120))
+        candidates = [ship for ship in candidates if self._is_ship_departure_ready(ship, merchant_idle_pause_seconds)]
         if not candidates:
             return None
 
         pirate_conf = self._lifecycle.get("pirate_activity") or {}
-        pirate_state = self._runtime.snapshot().get("pirate_event")
+        pirate_state = runtime_snap.get("pirate_event")
         pirate_active = bool(isinstance(pirate_state, dict) and pirate_state.get("active"))
         idle_bounty_multiplier = max(
             0.0,
@@ -993,7 +995,7 @@ class DepartureGenerator(threading.Thread):
                 return candidates[idx]
         return candidates[-1]
 
-    def _is_ship_departure_ready(self, ship: dict[str, Any], tick_time: datetime) -> bool:
+    def _is_ship_departure_ready(self, ship: dict[str, Any], merchant_idle_pause_seconds: int) -> bool:
         if ship.get("faction") != "merchant":
             return True
 
@@ -1001,8 +1003,9 @@ class DepartureGenerator(threading.Thread):
         if updated_at is None:
             return True
 
-        earliest = updated_at + timedelta(seconds=self._merchant_idle_pause_seconds)
-        return tick_time >= earliest
+        earliest = updated_at + timedelta(seconds=merchant_idle_pause_seconds)
+        now_utc = datetime.now(UTC)
+        return now_utc >= earliest
 
     def _pick_destination(
         self,

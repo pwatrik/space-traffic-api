@@ -29,6 +29,7 @@ class AppConfig:
     retention_max_rows: int
     db_max_size_mb: int
     disable_generator: bool
+    merchant_idle_pause_seconds: int
 
     @staticmethod
     def from_env() -> "AppConfig":
@@ -43,4 +44,5 @@ class AppConfig:
             retention_max_rows=_as_int(os.getenv("SPACE_TRAFFIC_RETENTION_MAX_ROWS"), 200000),
             db_max_size_mb=_as_int(os.getenv("SPACE_TRAFFIC_DB_MAX_SIZE_MB"), 512),
             disable_generator=_as_bool(os.getenv("SPACE_TRAFFIC_DISABLE_GENERATOR"), False),
+            merchant_idle_pause_seconds=_as_int(os.getenv("SPACE_TRAFFIC_MERCHANT_IDLE_PAUSE_SECONDS"), 120),
         )

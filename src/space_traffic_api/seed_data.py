@@ -522,13 +522,13 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
                     "body_type": "planet",
                     "parent_body": planet,
                     "cargo_type": _station_cargo(),
-                    "allowed_size_classes": ["small", "medium", "large", "xlarge"],
+                    "allowed_size_classes": template["allowed_size_classes"],
                 }
             )
 
         orbitals = _station_count(1, 3) if _is_large_planetoid(planet) else 1
         for idx in range(1, orbitals + 1):
-            sid = f"STN-PLANET-{base_token}-ORB{idx}"
+            sid = f"{template['id_prefix']}-{base_token}-ORB{idx}"
             stations.append(
                 {
                     "id": sid,
@@ -541,7 +541,7 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
                     "body_type": "planet",
                     "parent_body": planet,
                     "cargo_type": _station_cargo(),
-                    "allowed_size_classes": ["small", "medium", "large", "xlarge"],
+                    "allowed_size_classes": template["allowed_size_classes"],
                 }
             )
 
@@ -566,7 +566,7 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
                     "body_type": "moon",
                     "parent_body": parent,
                     "cargo_type": _station_cargo(),
-                    "allowed_size_classes": ["small", "medium", "large", "xlarge"],
+                    "allowed_size_classes": template["allowed_size_classes"],
                 }
             )
 
@@ -586,7 +586,7 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
                         "body_type": "moon",
                         "parent_body": parent,
                         "cargo_type": _station_cargo(),
-                        "allowed_size_classes": ["small", "medium", "large", "xlarge"],
+                        "allowed_size_classes": template["allowed_size_classes"],
                     }
                 )
 
@@ -605,7 +605,7 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
                 "body_type": "asteroid",
                 "parent_body": template["parent_body"] or "Asteroid Belt",
                 "cargo_type": _station_cargo(),
-                "allowed_size_classes": ["small", "medium", "large", "xlarge"],
+                "allowed_size_classes": template["allowed_size_classes"],
             }
         )
 
