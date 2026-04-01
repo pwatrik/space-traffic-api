@@ -239,9 +239,11 @@ class DepartureGenerator(threading.Thread):
                 self._sim_time = datetime.fromisoformat(raw.replace("Z", "+00:00"))
             except ValueError:
                 self._sim_time = datetime.now(UTC)
+            self._runtime.set_simulation_now(self._sim_time.isoformat())
             return
 
         self._sim_time = datetime.now(UTC)
+        self._runtime.set_simulation_now(self._sim_time.isoformat())
 
     def _effective_rate_bounds(
         self,
@@ -1091,6 +1093,7 @@ class DepartureGenerator(threading.Thread):
 
     def _advance_sim_time(self, tick_time: datetime, interval_seconds: float) -> None:
         self._sim_time = tick_time + timedelta(seconds=interval_seconds)
+        self._runtime.set_simulation_now(self._sim_time.isoformat())
 
     def estimate_arrival(self, departure_time: datetime, source: str, destination: str) -> datetime:
         if self._rng is None:

@@ -27,6 +27,7 @@ class RuntimeState:
             "db_max_size_mb": config.db_max_size_mb,
             "merchant_idle_pause_seconds": config.merchant_idle_pause_seconds,
             "simulation_time_scale": config.simulation_time_scale,
+            "simulation_now": config.deterministic_start_time if config.deterministic_mode else datetime.now(UTC).isoformat(),
             "active_scenario": None,
             "active_faults": {},
                        "pirate_spawn_probability_per_day": None,
@@ -169,15 +170,16 @@ class RuntimeState:
         intensity = max(0.0, min(5.0, intensity))
         duration_seconds = max(1, int(request.get("duration_seconds", 300)))
         scope = request.get("scope", {"type": "global"})
-        ends_at = datetime.now(UTC) + timedelta(seconds=duration_seconds)
 
         with self._lock:
+            now = self._clock_now_unlocked()
+            ends_at = now + timedelta(seconds=duration_seconds)
             self._state["active_scenario"] = {
                 "name": name,
                 "intensity": intensity,
                 "duration_seconds": duration_seconds,
                 "scope": scope,
-                "started_at": datetime.now(UTC).isoformat(),
+                "started_at": now.isoformat(),
                 "ends_at": ends_at.isoformat(),
             }
             self._persist_unlocked()
@@ -198,7 +200,7 @@ class RuntimeState:
 
         with self._lock:
             active_faults: dict[str, Any] = dict(self._state.get("active_faults", {}))
-            now = datetime.now(UTC)
+            now = self._clock_now_unlocked()
 
             for name, raw in faults.items():
                 if name not in FAULT_DEFINITIONS:
@@ -235,6 +237,7 @@ class RuntimeState:
 
     def reset(self, seed: int | None = None) -> dict[str, Any]:
         with self._lock:
+            now = self._clock_now_unlocked()
             if seed is not None:
                 self._state["deterministic_seed"] = int(seed)
             pirate_event = self._state.get("pirate_event", {})
@@ -245,11 +248,15 @@ class RuntimeState:
                     "anchor_body": None,
                     "strength": 0.0,
                     "started_at": None,
-                    "ended_at": datetime.now(UTC).isoformat(),
+                    "ended_at": now.isoformat(),
                     "next_spawn_earliest_at": None,
                     "affected_station_ids": [],
                 }
-            self._state["last_reset_at"] = datetime.now(UTC).isoformat()
+            if self._state.get("deterministic_mode"):
+                self._state["simulation_now"] = self._state.get("deterministic_start_time", now.isoformat())
+            else:
+                self._state["simulation_now"] = now.isoformat()
+            self._state["last_reset_at"] = now.isoformat()
             self._persist_unlocked()
             self._emit_control_event_unlocked(
                 "control",
@@ -270,11 +277,15 @@ class RuntimeState:
             self._state["pirate_event"] = dict(pirate_event)
             self._persist_unlocked()
 
+    def set_simulation_now(self, now_iso: str) -> None:
+        with self._lock:
+            self._state["simulation_now"] = now_iso
+
     def _persist_unlocked(self) -> None:
         self._store.set_control_state("runtime", self._state)
 
     def _expire_unlocked(self) -> None:
-        now = datetime.now(UTC)
+        now = self._clock_now_unlocked()
         scenario = self._state.get("active_scenario")
         scenario_dirty = False
         if scenario and scenario.get("ends_at"):
@@ -321,7 +332,7 @@ class RuntimeState:
             "payload": payload,
         }
         record["id"] = self._store.insert_control_event(event_type=event_type, action=action, payload=payload)
-        record["event_time"] = datetime.now(UTC).isoformat()
+        record["event_time"] = self._clock_now_unlocked().isoformat()
 
         with self._subscribers_lock:
             subscribers = list(self._subscribers)
@@ -330,3 +341,15 @@ class RuntimeState:
                 q.put_nowait(record)
             except queue.Full:
                 continue
+
+    def _clock_now_unlocked(self) -> datetime:
+        raw = self._state.get("simulation_now")
+        if isinstance(raw, str) and raw.strip():
+            try:
+                parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=UTC)
+                return parsed
+            except ValueError:
+                pass
+        return datetime.now(UTC)
