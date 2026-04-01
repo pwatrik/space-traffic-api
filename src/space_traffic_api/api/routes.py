@@ -250,7 +250,7 @@ def create_api_blueprint(
         seed = payload.get("seed")
         runtime_state = simulation.reset(seed=seed)
         store.reset_departures()
-        store.reset_ship_states()
+        store.reset_ship_states(now_iso=runtime_state.get("simulation_now"))
         return jsonify({"status": "reset", "runtime": runtime_state})
 
     return bp

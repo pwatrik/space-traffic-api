@@ -180,7 +180,10 @@ class DepartureGenerator(threading.Thread):
                 self._launch_all_merchants_at_startup(state=state, scenario=scenario, tick_time=tick_time)
                 self._startup_merchants_launched = True
 
-            arrived_ships = self._store.complete_ship_arrivals_with_details(tick_time.isoformat())
+            arrived_ships = self._store.complete_ship_arrivals_with_details(
+                tick_time.isoformat(),
+                now_iso=tick_time.isoformat(),
+            )
             self._apply_lifecycle(
                 interval_seconds=simulated_interval_seconds,
                 tick_time=tick_time,
@@ -287,7 +290,7 @@ class DepartureGenerator(threading.Thread):
             self._age_update_accumulator_days -= age_update_days
 
         if age_update_days > 0.0:
-            self._store.increment_ship_age(age_update_days)
+            self._store.increment_ship_age(age_update_days, now_iso=tick_time.isoformat())
 
         self._manage_pirate_activity(
             tick_time=tick_time,
@@ -472,7 +475,12 @@ class DepartureGenerator(threading.Thread):
                     continue
                 ship_id = row["ship_id"]
                 destination = row.get("destination_station_id")
-                if self._store.deactivate_ship(ship_id=ship_id, status="destroyed", current_station_id=destination):
+                if self._store.deactivate_ship(
+                    ship_id=ship_id,
+                    status="destroyed",
+                    current_station_id=destination,
+                    now_iso=tick_time.isoformat(),
+                ):
                     destroyed.append(ship_id)
 
             if destroyed:
@@ -605,7 +613,12 @@ class DepartureGenerator(threading.Thread):
                 continue
 
             ship_id = ship["ship_id"]
-            if self._store.deactivate_ship(ship_id=ship_id, status="decommissioned", current_station_id=ship.get("current_station_id")):
+            if self._store.deactivate_ship(
+                ship_id=ship_id,
+                status="decommissioned",
+                current_station_id=ship.get("current_station_id"),
+                now_iso=tick_time.isoformat(),
+            ):
                 retired_ids.append(ship_id)
 
         if retired_ids:
@@ -656,7 +669,12 @@ class DepartureGenerator(threading.Thread):
         destroyed: list[str] = []
         for ship in selected:
             ship_id = ship["ship_id"]
-            if self._store.deactivate_ship(ship_id=ship_id, status="destroyed", current_station_id=ship.get("current_station_id")):
+            if self._store.deactivate_ship(
+                ship_id=ship_id,
+                status="destroyed",
+                current_station_id=ship.get("current_station_id"),
+                now_iso=tick_time.isoformat(),
+            ):
                 destroyed.append(ship_id)
 
         if destroyed:
@@ -873,6 +891,7 @@ class DepartureGenerator(threading.Thread):
             destination_station_id=destination_station_id,
             departure_time=departure_time.isoformat(),
             est_arrival_time=eta.isoformat(),
+            now_iso=departure_time.isoformat(),
         )
         if not departed:
             return None
@@ -956,7 +975,11 @@ class DepartureGenerator(threading.Thread):
         candidates = self._store.list_available_ships()
         runtime_snap = self._runtime.snapshot()
         merchant_idle_pause_seconds = int(runtime_snap.get("merchant_idle_pause_seconds", 120))
-        candidates = [ship for ship in candidates if self._is_ship_departure_ready(ship, merchant_idle_pause_seconds)]
+        candidates = [
+            ship
+            for ship in candidates
+            if self._is_ship_departure_ready(ship, merchant_idle_pause_seconds, tick_time)
+        ]
         if not candidates:
             return None
 
@@ -1003,7 +1026,12 @@ class DepartureGenerator(threading.Thread):
                 return candidates[idx]
         return candidates[-1]
 
-    def _is_ship_departure_ready(self, ship: dict[str, Any], merchant_idle_pause_seconds: int) -> bool:
+    def _is_ship_departure_ready(
+        self,
+        ship: dict[str, Any],
+        merchant_idle_pause_seconds: int,
+        tick_time: datetime,
+    ) -> bool:
         if ship.get("faction") != "merchant":
             return True
 
@@ -1012,8 +1040,7 @@ class DepartureGenerator(threading.Thread):
             return True
 
         earliest = updated_at + timedelta(seconds=merchant_idle_pause_seconds)
-        now_utc = datetime.now(UTC)
-        return now_utc >= earliest
+        return tick_time >= earliest
 
     def _pick_destination(
         self,

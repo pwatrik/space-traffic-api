@@ -326,13 +326,19 @@ class RuntimeState:
             self._persist_unlocked()
 
     def _emit_control_event_unlocked(self, event_type: str, action: str, payload: dict[str, Any]) -> None:
+        event_time = self._clock_now_unlocked().isoformat()
         record = {
             "event_type": event_type,
             "action": action,
             "payload": payload,
         }
-        record["id"] = self._store.insert_control_event(event_type=event_type, action=action, payload=payload)
-        record["event_time"] = self._clock_now_unlocked().isoformat()
+        record["id"] = self._store.insert_control_event(
+            event_type=event_type,
+            action=action,
+            payload=payload,
+            event_time=event_time,
+        )
+        record["event_time"] = event_time
 
         with self._subscribers_lock:
             subscribers = list(self._subscribers)
