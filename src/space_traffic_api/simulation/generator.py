@@ -345,14 +345,27 @@ class DepartureGenerator(threading.Thread):
                 self._runtime.set_pirate_event_state(next_state)
             return
 
-        state = deepcopy(self._runtime.snapshot().get("pirate_event") or {})
+        runtime_snap = self._runtime.snapshot()
+        state = deepcopy(runtime_snap.get("pirate_event") or {})
 
         active = bool(state.get("active", False))
         strength = float(state.get("strength") or 0.0)
-        strength_end_threshold = float(conf.get("strength_end_threshold", 0.5))
+        raw_spawn_probability = runtime_snap.get("pirate_spawn_probability_per_day")
+        if raw_spawn_probability is None:
+            raw_spawn_probability = conf.get("spawn_probability_per_day", 1.0)
+        spawn_probability_per_day = float(raw_spawn_probability)
+
+        raw_strength_end_threshold = runtime_snap.get("pirate_strength_end_threshold")
+        if raw_strength_end_threshold is None:
+            raw_strength_end_threshold = conf.get("strength_end_threshold", 0.5)
+        strength_end_threshold = float(raw_strength_end_threshold)
+
+        raw_decay_per_day = runtime_snap.get("pirate_strength_decay_per_day")
+        if raw_decay_per_day is None:
+            raw_decay_per_day = conf.get("ambient_strength_decay_per_day", 0.0)
+        decay_per_day = float(raw_decay_per_day)
 
         if active:
-            decay_per_day = float(conf.get("ambient_strength_decay_per_day", 0.0))
             if decay_per_day > 0 and elapsed_days > 0:
                 next_strength = max(0.0, strength - (decay_per_day * elapsed_days))
                 if abs(next_strength - strength) >= 1e-9:
@@ -362,13 +375,18 @@ class DepartureGenerator(threading.Thread):
                     self._runtime.set_pirate_event_state(state)
 
             if strength <= strength_end_threshold:
-                self._end_pirate_event(state=state, conf=conf, tick_time=tick_time)
+                self._end_pirate_event(state=state, conf=conf, tick_time=tick_time, runtime_snap=runtime_snap)
             return
 
         next_spawn_raw = state.get("next_spawn_earliest_at")
         next_spawn_at = self._parse_iso(next_spawn_raw)
         if next_spawn_at and tick_time < next_spawn_at:
             return
+
+        if spawn_probability_per_day > 0:
+            spawn_chance_when_eligible = min(1.0, max(0.0, spawn_probability_per_day))
+            if self._rng.random() >= spawn_chance_when_eligible:
+                return
 
         allowed_anchors = [str(x) for x in conf.get("allowed_anchors", []) if str(x).strip()]
         if not allowed_anchors:
@@ -387,7 +405,10 @@ class DepartureGenerator(threading.Thread):
             ]
         )
 
-        strength_start = float(conf.get("strength_start", 1.0))
+        raw_strength_start = runtime_snap.get("pirate_strength_start")
+        if raw_strength_start is None:
+            raw_strength_start = conf.get("strength_start", 1.0)
+        strength_start = float(raw_strength_start)
         next_state = {
             "active": True,
             "anchor_body": anchor,
@@ -496,15 +517,27 @@ class DepartureGenerator(threading.Thread):
             },
         )
 
-        threshold = float(conf.get("strength_end_threshold", 0.5))
+        runtime_snap = self._runtime.snapshot()
+        raw_threshold = runtime_snap.get("pirate_strength_end_threshold")
+        if raw_threshold is None:
+            raw_threshold = conf.get("strength_end_threshold", 0.5)
+        threshold = float(raw_threshold)
         if next_strength <= threshold:
-            self._end_pirate_event(state=state, conf=conf, tick_time=tick_time)
+            self._end_pirate_event(state=state, conf=conf, tick_time=tick_time, runtime_snap=runtime_snap)
 
-    def _end_pirate_event(self, state: dict[str, Any], conf: dict[str, Any], tick_time: datetime) -> None:
+    def _end_pirate_event(self, state: dict[str, Any], conf: dict[str, Any], tick_time: datetime, runtime_snap: dict[str, Any] | None = None) -> None:
         previous_anchor = state.get("anchor_body")
         strength = float(state.get("strength") or 0.0)
-        min_days = float(conf.get("respawn_min_days", 10.0))
-        max_days = float(conf.get("respawn_max_days", 30.0))
+        if runtime_snap is None:
+            runtime_snap = self._runtime.snapshot()
+        raw_min_days = runtime_snap.get("pirate_respawn_min_days")
+        if raw_min_days is None:
+            raw_min_days = conf.get("respawn_min_days", 10.0)
+        raw_max_days = runtime_snap.get("pirate_respawn_max_days")
+        if raw_max_days is None:
+            raw_max_days = conf.get("respawn_max_days", 30.0)
+        min_days = float(raw_min_days)
+        max_days = float(raw_max_days)
         delay_days = self._rng.uniform(min_days, max_days)
         next_spawn_at = tick_time + timedelta(days=delay_days)
 

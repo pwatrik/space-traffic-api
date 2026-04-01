@@ -100,6 +100,32 @@
               <button class="btn" id="fault-clear">Clear All</button>
             </div>
           </div>
+
+          <div class="control-block">
+            <h3>Pirate Activity</h3>
+            <div class="inline-row compact">
+              <label>Preset
+                <select id="pirate-preset">
+                  <option value="custom">Custom</option>
+                  <option value="calm">Calm</option>
+                  <option value="balanced">Balanced</option>
+                  <option value="aggressive">Aggressive</option>
+                  <option value="chaos">Chaos</option>
+                </select>
+              </label>
+              <button class="btn" id="pirate-preset-apply">Load Preset</button>
+            </div>
+            <div class="inline-row">
+              <label>Spawn Chance <input id="pirate-spawn-prob" type="number" min="0" max="1" step="0.05" value="1.0"></label>
+              <label>Decay/Day <input id="pirate-decay" type="number" min="0" max="1" step="0.01" value="0.03"></label>
+              <label>End Threshold <input id="pirate-end-threshold" type="number" min="0.01" max="1" step="0.01" value="0.3"></label>
+              <label>Max Strength <input id="pirate-strength-start" type="number" min="0.1" max="5" step="0.1" value="1.0"></label>
+              <label>Respawn Min (days) <input id="pirate-respawn-min" type="number" min="0.1" max="10" step="0.1" value="0.2"></label>
+              <label>Respawn Max (days) <input id="pirate-respawn-max" type="number" min="0.1" max="30" step="0.5" value="1.0"></label>
+              <button class="btn" id="pirate-apply">Apply</button>
+            </div>
+            <p class="meta">Presets only fill the inputs. Use Apply to push values into the live simulation.</p>
+          </div>
         </div>
 
         <div class="control-summary-grid">
@@ -110,6 +136,10 @@
           <article class="summary-block">
             <h3>Active Faults</h3>
             <div id="active-faults-summary" class="summary-content">Loading...</div>
+          </article>
+          <article class="summary-block">
+            <h3>Pirate Event Status</h3>
+            <div id="pirate-event-summary" class="summary-content">Loading...</div>
           </article>
           <article class="summary-block">
             <h3>Operator Activity</h3>

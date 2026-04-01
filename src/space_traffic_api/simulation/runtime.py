@@ -27,6 +27,12 @@ class RuntimeState:
             "db_max_size_mb": config.db_max_size_mb,
             "active_scenario": None,
             "active_faults": {},
+                       "pirate_spawn_probability_per_day": None,
+                       "pirate_strength_start": None,
+                       "pirate_strength_end_threshold": None,
+                       "pirate_strength_decay_per_day": None,
+                       "pirate_respawn_min_days": None,
+                       "pirate_respawn_max_days": None,
             "pirate_event": {
                 "active": False,
                 "anchor_body": None,
@@ -80,6 +86,12 @@ class RuntimeState:
             "deterministic_start_time",
             "retention_max_rows",
             "db_max_size_mb",
+                   "pirate_spawn_probability_per_day",
+                   "pirate_strength_start",
+                   "pirate_strength_end_threshold",
+                   "pirate_strength_decay_per_day",
+                   "pirate_respawn_min_days",
+                   "pirate_respawn_max_days",
         }
 
         with self._lock:
@@ -97,6 +109,42 @@ class RuntimeState:
             if self._state["db_max_size_mb"] < 50:
                 self._state["db_max_size_mb"] = 50
 
+            def _to_float(value: Any) -> float | None:
+                try:
+                    return float(value)
+                except (TypeError, ValueError):
+                    return None
+
+            if self._state.get("pirate_spawn_probability_per_day") is not None:
+                _val = _to_float(self._state["pirate_spawn_probability_per_day"])
+                if _val is not None:
+                    self._state["pirate_spawn_probability_per_day"] = max(0.0, min(1.0, _val))
+            if self._state.get("pirate_strength_start") is not None:
+                _val = _to_float(self._state["pirate_strength_start"])
+                if _val is not None:
+                    self._state["pirate_strength_start"] = max(0.1, _val)
+            if self._state.get("pirate_strength_end_threshold") is not None:
+                _val = _to_float(self._state["pirate_strength_end_threshold"])
+                if _val is not None:
+                    self._state["pirate_strength_end_threshold"] = max(0.01, _val)
+            if self._state.get("pirate_strength_decay_per_day") is not None:
+                _val = _to_float(self._state["pirate_strength_decay_per_day"])
+                if _val is not None:
+                    self._state["pirate_strength_decay_per_day"] = max(0.0, _val)
+            if self._state.get("pirate_respawn_min_days") is not None:
+                _val = _to_float(self._state["pirate_respawn_min_days"])
+                if _val is not None:
+                    self._state["pirate_respawn_min_days"] = max(0.1, _val)
+            if self._state.get("pirate_respawn_max_days") is not None:
+                _val = _to_float(self._state["pirate_respawn_max_days"])
+                if _val is not None:
+                    self._state["pirate_respawn_max_days"] = max(0.1, _val)
+            if (
+                self._state.get("pirate_respawn_min_days") is not None
+                and self._state.get("pirate_respawn_max_days") is not None
+                and self._state["pirate_respawn_max_days"] < self._state["pirate_respawn_min_days"]
+            ):
+                self._state["pirate_respawn_max_days"] = self._state["pirate_respawn_min_days"]
             self._persist_unlocked()
             self._emit_control_event_unlocked("config", "patched", {"config": dict(self._state)})
             return dict(self._state)
