@@ -321,13 +321,16 @@ function renderControlSummary(config, faults) {
         `<span class="mini-pill"><strong>${escapeHtml(name)}</strong> rate ${escapeHtml(value.rate)}</span>`
     )
     .join("")}</div>`;
+}
 
 function renderPirateEventSummary(config) {
   const pirateEl = document.getElementById("pirate-event-summary");
   const pirate = config.pirate_event || {};
-  
+
   if (pirate.active) {
-    const elapsedSeconds = pirate.started_at ? Math.floor((Date.now() - new Date(pirate.started_at).getTime()) / 1000) : 0;
+    const elapsedSeconds = pirate.started_at
+      ? Math.floor((Date.now() - new Date(pirate.started_at).getTime()) / 1000)
+      : 0;
     const elapsedMin = Math.floor(elapsedSeconds / 60);
     const elapsedStr = elapsedMin > 0 ? `${elapsedMin}m` : `${elapsedSeconds}s`;
     pirateEl.innerHTML = `
