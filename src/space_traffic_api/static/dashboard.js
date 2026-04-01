@@ -473,6 +473,7 @@ async function loadControlData() {
   document.getElementById("cfg-deterministic").checked = Boolean(config.deterministic_mode);
   const seed = config.deterministic_seed;
   document.getElementById("cfg-seed").value = seed !== null && seed !== undefined ? String(seed) : "";
+  document.getElementById("cfg-time-scale").value = config.simulation_time_scale ?? 1.0;
 
   const scenarioSelect = document.getElementById("scenario-name");
   scenarioSelect.innerHTML = "";
@@ -522,9 +523,13 @@ function bindControls() {
       try {
         const deterministicMode = document.getElementById("cfg-deterministic").checked;
         const seedRaw = document.getElementById("cfg-seed").value.trim();
+        const timeScaleRaw = document.getElementById("cfg-time-scale").value.trim();
         const payload = { deterministic_mode: deterministicMode };
         if (seedRaw) {
           payload.deterministic_seed = Number(seedRaw);
+        }
+        if (timeScaleRaw) {
+          payload.simulation_time_scale = Number(timeScaleRaw);
         }
 
         setControlStatus("pending", "Applying runtime configuration...");
@@ -536,7 +541,7 @@ function bindControls() {
         await loadControlData();
         setControlStatus("success", "Runtime configuration updated.");
         appendLog(ctrlLog, "[control] config patched");
-        recordOperatorAction("Config updated", "Deterministic mode and seed saved.");
+        recordOperatorAction("Config updated", `Deterministic mode, seed, and time scale ${payload.simulation_time_scale ?? "unchanged"}.`);
         showToast("success", "Config Applied", "Runtime configuration updated.");
       } catch (err) {
         setControlStatus("error", `Config update failed: ${err}`);
