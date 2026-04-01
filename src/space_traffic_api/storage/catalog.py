@@ -20,18 +20,28 @@ class CatalogRepository:
         with self._context.lock:
             self._context.conn.executemany(
                 """
-                INSERT INTO stations (id, name, body_name, body_type, parent_body, allowed_size_classes)
-                VALUES (:id, :name, :body_name, :body_type, :parent_body, :allowed_size_classes)
+                INSERT INTO stations (id, name, body_name, body_type, parent_body, cargo_type, allowed_size_classes)
+                VALUES (:id, :name, :body_name, :body_type, :parent_body, :cargo_type, :allowed_size_classes)
                 ON CONFLICT(id) DO UPDATE SET
                     name=excluded.name,
                     body_name=excluded.body_name,
                     body_type=excluded.body_type,
                     parent_body=excluded.parent_body,
+                    cargo_type=excluded.cargo_type,
                     allowed_size_classes=excluded.allowed_size_classes
                 """,
                 rows,
             )
             self._context.conn.commit()
+
+    def set_ship_cargo(self, ship_id: str, cargo: str) -> bool:
+        with self._context.lock:
+            cur = self._context.conn.execute(
+                "UPDATE ships SET cargo = ? WHERE id = ?",
+                (cargo, ship_id),
+            )
+            self._context.conn.commit()
+            return int(cur.rowcount) > 0
 
     def seed_ships(self, ships: list[dict[str, Any]]) -> None:
         with self._context.lock:
@@ -39,11 +49,11 @@ class CatalogRepository:
                 """
                 INSERT INTO ships (
                     id, name, faction, ship_type, size_class, displacement_million_m3, home_station_id,
-                    captain_name, cargo
+                    captain_name, cargo, crew, passengers
                 )
                 VALUES (
                     :id, :name, :faction, :ship_type, :size_class, :displacement_million_m3, :home_station_id,
-                    :captain_name, :cargo
+                    :captain_name, :cargo, :crew, :passengers
                 )
                 ON CONFLICT(id) DO UPDATE SET
                     name=excluded.name,
@@ -53,7 +63,9 @@ class CatalogRepository:
                     displacement_million_m3=excluded.displacement_million_m3,
                     home_station_id=excluded.home_station_id,
                     captain_name=excluded.captain_name,
-                    cargo=excluded.cargo
+                    cargo=excluded.cargo,
+                    crew=excluded.crew,
+                    passengers=excluded.passengers
                 """,
                 ships,
             )
@@ -176,6 +188,6 @@ class CatalogRepository:
         """Return ship count grouped by cargo type."""
         with self._context.lock:
             rows = self._context.conn.execute(
-                "SELECT cargo, COUNT(*) as count FROM ships GROUP BY cargo ORDER BY cargo"
+                "SELECT cargo, COUNT(*) as count FROM ships WHERE cargo <> '' GROUP BY cargo ORDER BY cargo"
             ).fetchall()
         return {row["cargo"]: row["count"] for row in rows}

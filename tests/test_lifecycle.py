@@ -273,8 +273,11 @@ def test_build_queue_uses_ship_names_singular_from_naming_config(monkeypatch):
         monkeypatch.setenv("SPACE_TRAFFIC_MIN_EVENTS_PER_MIN", "300")
         monkeypatch.setenv("SPACE_TRAFFIC_MAX_EVENTS_PER_MIN", "300")
 
-        with patch("space_traffic_api.seed_data.load_naming_config") as mock_naming:
+        with patch("space_traffic_api.seed_data.load_naming_config") as mock_naming, patch(
+            "space_traffic_api.simulation.generator.load_naming_config"
+        ) as mock_gen_naming:
             mock_naming.return_value = {"ship_names_singular": list(singular_names)}
+            mock_gen_naming.return_value = {"ship_names_singular": list(singular_names)}
             app = create_app()
 
         client = app.test_client()

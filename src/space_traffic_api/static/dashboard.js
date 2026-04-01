@@ -351,7 +351,6 @@ function renderPirateEventSummary(config) {
     pirateEl.innerHTML = '<span class="summary-empty">Pirate event inactive.</span>';
   }
 }
-}
 
 function setKpis(stats) {
   const summary = stats.summary || {};

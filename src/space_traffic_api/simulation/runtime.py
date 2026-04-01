@@ -25,6 +25,7 @@ class RuntimeState:
             "deterministic_start_time": config.deterministic_start_time,
             "retention_max_rows": config.retention_max_rows,
             "db_max_size_mb": config.db_max_size_mb,
+            "merchant_idle_pause_seconds": config.merchant_idle_pause_seconds,
             "active_scenario": None,
             "active_faults": {},
                        "pirate_spawn_probability_per_day": None,
@@ -86,6 +87,7 @@ class RuntimeState:
             "deterministic_start_time",
             "retention_max_rows",
             "db_max_size_mb",
+            "merchant_idle_pause_seconds",
                    "pirate_spawn_probability_per_day",
                    "pirate_strength_start",
                    "pirate_strength_end_threshold",
@@ -108,6 +110,8 @@ class RuntimeState:
                 self._state["retention_max_rows"] = 100
             if self._state["db_max_size_mb"] < 50:
                 self._state["db_max_size_mb"] = 50
+            pause_seconds = int(self._state.get("merchant_idle_pause_seconds", 120))
+            self._state["merchant_idle_pause_seconds"] = max(0, pause_seconds)
 
             def _to_float(value: Any) -> float | None:
                 try:

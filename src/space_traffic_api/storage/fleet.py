@@ -100,6 +100,7 @@ class FleetRepository:
             SELECT
                 ss.ship_id,
                 ss.current_station_id,
+                ss.updated_at,
                 s.faction,
                 s.ship_type,
                 s.size_class
