@@ -1,0 +1,16 @@
+{
+  "preset": "baseline",
+  "seed": 99,
+  "rate_events_per_min": 300,
+  "target_events": 10,
+  "actual_events": 10,
+  "elapsed_seconds": 0.19,
+  "departures_per_second": 52.596,
+  "tick_latency": {},
+  "final_engine_metrics": {
+    "tick_count": 0,
+    "tick_latency_ms_avg": 0.0,
+    "tick_latency_ms_max": 0.0,
+    "departures_emitted_total": 12
+  }
+}

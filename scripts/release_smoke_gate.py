@@ -11,10 +11,11 @@ Checks:
 4) Runtime metrics      : tick count grows and control-event backlog is bounded
 
 Usage:
-    .venv\\Scripts\\python.exe scripts\\release_smoke_gate.py
+    .venv\\Scripts\\python.exe scripts\\release_smoke_gate.py [--report-out PATH]
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import subprocess
@@ -75,6 +76,14 @@ def _runtime_metrics_sanity() -> dict[str, object]:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Release smoke gate")
+    parser.add_argument(
+        "--report-out",
+        default="",
+        help="Optional path for writing a JSON smoke report artifact",
+    )
+    args = parser.parse_args()
+
     print("=== release smoke gate ===")
     print(f"python: {sys.executable}")
     print(f"repo:   {repo}")
@@ -97,9 +106,16 @@ def main() -> None:
 
     # 4) Runtime metrics sanity
     metrics = _runtime_metrics_sanity()
+    report = {"status": "pass", "runtime_metrics": metrics}
+
+    if args.report_out:
+        report_path = Path(args.report_out)
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        print(f"[gate] wrote smoke report: {report_path}")
 
     print("\n=== release smoke gate: PASS ===")
-    print(json.dumps({"status": "pass", "runtime_metrics": metrics}, indent=2))
+    print(json.dumps(report, indent=2))
 
 
 if __name__ == "__main__":
