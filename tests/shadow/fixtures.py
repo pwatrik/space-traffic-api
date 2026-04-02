@@ -211,13 +211,25 @@ class DeterministicRun:
             "SPACE_TRAFFIC_MIN_EVENTS_PER_MIN": str(self._rate),
             "SPACE_TRAFFIC_MAX_EVENTS_PER_MIN": str(self._rate),
         }
-        for key, value in env_updates.items():
-            self._saved_env[key] = os.environ.get(key)
-            os.environ[key] = value
+        try:
+            for key, value in env_updates.items():
+                self._saved_env[key] = os.environ.get(key)
+                os.environ[key] = value
 
-        self.app = create_app()
-        self.client = self.app.test_client()
-        return self
+            self.app = create_app()
+            self.client = self.app.test_client()
+            return self
+        except Exception:
+            # If app creation fails, restore environment and clean up temp dir
+            for key, old_value in self._saved_env.items():
+                if old_value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = old_value
+            if self._tmpdir:
+                self._tmpdir.cleanup()
+                self._tmpdir = None
+            raise
 
     def __exit__(self, *_: Any) -> None:
         import os
@@ -252,14 +264,22 @@ class DeterministicRun:
         """Poll /departures until at least *n* events have been produced."""
         deadline = time.monotonic() + timeout_seconds
         while time.monotonic() < deadline:
-            resp = self.client.get("/departures", headers=self.headers)
+            resp = self.client.get(
+                "/departures",
+                headers=self.headers,
+                query_string={"limit": min(1000, n)},
+            )
             assert resp.status_code == 200
             data = resp.get_json()
             departures = data.get("departures", [])
             if len(departures) >= n:
                 return departures[:n]
             time.sleep(poll_interval)
-        resp = self.client.get("/departures", headers=self.headers)
+        resp = self.client.get(
+            "/departures",
+            headers=self.headers,
+            query_string={"limit": min(1000, n)},
+        )
         departures = resp.get_json().get("departures", [])
         if fail_on_timeout:
             from shadow.assertions import summarize_departures
