@@ -38,6 +38,47 @@ docker build -t space-traffic-api .
 docker run --rm -p 8000:8000 space-traffic-api
 ```
 
+## CI Policy
+
+- Pull requests and pushes to `main` run fast checks with slow tests excluded.
+- Nightly CI runs the full suite, then repeats shadow slow tests 3 times to detect flakes.
+- Release smoke gate runs on push/manual and enforces a compact pre-release checklist.
+
+Workflow file: `.github/workflows/ci.yml`
+
+## Release Smoke Gate
+
+- Script: `scripts/release_smoke_gate.py`
+- Runs:
+  - `pytest -m "not slow" -q`
+  - `pytest tests/test_golden_snapshot.py -q`
+  - focused shadow-core checks
+  - runtime metrics sanity (`tick_count > 0`, bounded backlog)
+
+Run locally:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\release_smoke_gate.py
+```
+
+## Determinism Contract + Perf Baseline
+
+- Golden determinism contract test: `tests/test_golden_snapshot.py`
+- Golden capture helper: `scripts/capture_golden_snapshot.py`
+- Perf baseline script: `scripts/benchmark_deterministic.py`
+
+Refresh golden snapshot after intentional deterministic behavior changes:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\capture_golden_snapshot.py
+```
+
+Run baseline benchmark:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\benchmark_deterministic.py --events 10 --rate 300
+```
+
 ## Authentication
 
 No authentication is required. All endpoints are public.

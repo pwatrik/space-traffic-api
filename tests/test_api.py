@@ -15,6 +15,10 @@ def test_healthz_and_public_endpoints():
         try:
             health = client.get("/healthz")
             assert health.status_code == 200
+            health_payload = health.get_json()
+            assert "runtime_metrics" in health_payload
+            assert "tick_count" in health_payload["runtime_metrics"]
+            assert "departures_per_minute_recent" in health_payload["runtime_metrics"]
 
             stations = client.get("/stations")
             assert stations.status_code == 200
@@ -61,6 +65,9 @@ def test_stats_endpoint():
             assert "ship_states" in payload
             assert "pirate_strength" in payload
             assert "active_scenario" in payload
+            assert "runtime_metrics" in payload
+            assert "control_event_backlog_total" in payload["runtime_metrics"]
+            assert "tick_latency_ms_avg" in payload["runtime_metrics"]
             # Verify summary has expected structure
             assert "stations" in payload["summary"]
             assert "ships" in payload["summary"]
