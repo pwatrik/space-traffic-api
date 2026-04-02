@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * *"
+
+jobs:
+  test-fast:
+    name: Fast Tests (PR)
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run fast suite (exclude slow)
+        run: pytest -m "not slow" -q
+
+  shadow-nightly:
+    name: Nightly Full + Shadow Repeat
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run full suite
+        run: pytest -q
+
+      - name: Repeat shadow slow tests (3x)
+        run: |
+          for i in 1 2 3; do
+            echo "Shadow repeat run $i"
+            pytest -m "slow" tests/test_shadow_comparison_harness.py tests/test_shadow_parity.py tests/test_shadow_stability.py -q
+          done

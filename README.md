@@ -38,6 +38,13 @@ docker build -t space-traffic-api .
 docker run --rm -p 8000:8000 space-traffic-api
 ```
 
+## CI Policy
+
+- Pull requests and pushes to `main` run fast checks with slow tests excluded.
+- Nightly CI runs the full suite, then repeats shadow slow tests 3 times to detect flakes.
+
+Workflow file: `.github/workflows/ci.yml`
+
 ## Authentication
 
 No authentication is required. All endpoints are public.
