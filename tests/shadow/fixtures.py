@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections import Counter
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -92,6 +93,12 @@ CATALOG_PRESETS: dict[str, dict[str, Any]] = {
 }
 
 
+# Shared harness defaults to keep slow-test behavior stable across machines.
+SHADOW_DEFAULT_START_TIME = "2150-01-01T00:00:00Z"
+SHADOW_DEFAULT_TIMEOUT_SECONDS = 12.0
+SHADOW_DEFAULT_POLL_INTERVAL_SECONDS = 0.05
+
+
 def _write_catalog(path: Path, *, ship_count: int, ship_seed: int, lifecycle: dict[str, Any]) -> None:
     catalog = {
         "celestial": {
@@ -165,7 +172,7 @@ class DeterministicRun:
         preset: str = "baseline",
         seed: int | None = None,
         rate: int | None = None,
-        start_time: str = "2150-01-01T00:00:00Z",
+        start_time: str = SHADOW_DEFAULT_START_TIME,
     ) -> None:
         cfg = CATALOG_PRESETS[preset]
         self._ship_count: int = cfg["ship_count"]
@@ -238,8 +245,9 @@ class DeterministicRun:
     def collect_departures(
         self,
         n: int,
-        timeout_seconds: float = 8.0,
-        poll_interval: float = 0.1,
+        timeout_seconds: float = SHADOW_DEFAULT_TIMEOUT_SECONDS,
+        poll_interval: float = SHADOW_DEFAULT_POLL_INTERVAL_SECONDS,
+        fail_on_timeout: bool = True,
     ) -> list[dict[str, Any]]:
         """Poll /departures until at least *n* events have been produced."""
         deadline = time.monotonic() + timeout_seconds
@@ -252,13 +260,26 @@ class DeterministicRun:
                 return departures[:n]
             time.sleep(poll_interval)
         resp = self.client.get("/departures", headers=self.headers)
-        return resp.get_json().get("departures", [])
+        departures = resp.get_json().get("departures", [])
+        if fail_on_timeout:
+            from shadow.assertions import summarize_departures
+
+            summary = summarize_departures(departures)
+            sampled_ids = [d.get("event_uid") for d in departures[:5]]
+            raise AssertionError(
+                "Timed out waiting for departures. "
+                f"required={n} observed={len(departures)} "
+                f"timeout_seconds={timeout_seconds} poll_interval={poll_interval}. "
+                f"summary={summary} sample_event_uids={sampled_ids}"
+            )
+        return departures
 
     def collect_control_events(
         self,
         action: str,
-        timeout_seconds: float = 8.0,
-        poll_interval: float = 0.1,
+        timeout_seconds: float = SHADOW_DEFAULT_TIMEOUT_SECONDS,
+        poll_interval: float = SHADOW_DEFAULT_POLL_INTERVAL_SECONDS,
+        fail_on_timeout: bool = True,
     ) -> list[dict[str, Any]]:
         """Poll /control-events until at least one matching action appears."""
         deadline = time.monotonic() + timeout_seconds
@@ -271,11 +292,20 @@ class DeterministicRun:
                 return matching
             time.sleep(poll_interval)
         resp = self.client.get("/control-events", headers=self.headers)
-        return [
+        all_events = resp.get_json().get("control_events", [])
+        matching = [
             e
-            for e in resp.get_json().get("control_events", [])
+            for e in all_events
             if e.get("action") == action
         ]
+        if fail_on_timeout and not matching:
+            observed_actions = Counter(str(e.get("action")) for e in all_events)
+            raise AssertionError(
+                "Timed out waiting for control events. "
+                f"required_action={action!r} timeout_seconds={timeout_seconds} "
+                f"poll_interval={poll_interval} observed_actions={dict(observed_actions)}"
+            )
+        return matching
 
     def get_config(self) -> dict[str, Any]:
         resp = self.client.get("/config", headers=self.headers)
