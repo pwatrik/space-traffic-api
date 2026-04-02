@@ -503,8 +503,6 @@ class DepartureGenerator(threading.Thread):
         )
         if event is None:
             return None
-
-        self._last_event_uid = event_uid
         return event
 
     def _launch_all_merchants_at_startup(
@@ -554,6 +552,7 @@ class DepartureGenerator(threading.Thread):
             self._next_db_size_check_at = now_monotonic + 5.0
 
         self._publish_event(event)
+        self._last_event_uid = event["event_uid"]
 
     def _pick_ship(self, scenario: dict[str, Any] | None, tick_time: datetime) -> dict[str, Any] | None:
         candidates = self._store.list_available_ships()

@@ -82,7 +82,6 @@ class SimulationEngine:
         if "delayed_insert" in event.get("fault_flags", []):
             should_stop = delayed_insert_pause(event)
             if should_stop:
-                advance_sim_time(tick_time, interval_seconds)
                 return TickResult(
                     departed_event=None,
                     interrupted=False,

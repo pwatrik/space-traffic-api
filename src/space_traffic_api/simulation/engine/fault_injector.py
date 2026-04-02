@@ -10,7 +10,7 @@ def apply_faults(
 	event: dict[str, Any],
 	state: dict[str, Any],
 	rng: random.Random,
-	last_event_uid: str,
+	last_event_uid: str | None = None,
 ) -> None:
 	"""Apply active fault mutations to an event payload in place."""
 
@@ -26,7 +26,13 @@ def apply_faults(
 		if fault_name == "missing_field":
 			event["destination_station_id"] = None
 		elif fault_name == "invalid_enum":
-			raw = json.loads(event["payload_json"])
+			if event.get("malformed"):
+				continue
+			try:
+				raw = json.loads(event["payload_json"])
+			except json.JSONDecodeError:
+				event["malformed"] = True
+				continue
 			raw["route_priority"] = "totally_invalid"
 			event["payload_json"] = json.dumps(raw)
 		elif fault_name == "out_of_order_timestamp":
