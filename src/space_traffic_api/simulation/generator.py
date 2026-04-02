@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import queue
 import random
 import threading
@@ -11,6 +10,11 @@ from typing import Any
 
 from ..seed_data import load_naming_config, station_distance_groups
 from ..store import SQLiteStore
+from .engine.departure_builder import create_departure_event
+from .engine.fault_injector import apply_faults
+from .engine.routing import pick_destination
+from .engine.ship_selector import select_ship
+from .engine.simulation_engine import SimulationEngine
 from .policies.build import apply_build_queue_policy
 from .policies.decommission import apply_decommission_policy
 from .policies.lifecycle import build_effective_lifecycle_config
@@ -60,6 +64,7 @@ class DepartureGenerator(threading.Thread):
         self._next_ship_sequence = self._store.max_ship_sequence() + 1
         self._age_update_accumulator_days: float = 0.0
         self._startup_merchants_launched = False
+        self._engine = SimulationEngine()
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -102,44 +107,33 @@ class DepartureGenerator(threading.Thread):
             wait_seconds = interval_seconds / simulation_time_scale
             tick_time = self._current_tick_time(state)
 
-            if not self._startup_merchants_launched:
-                self._launch_all_merchants_at_startup(state=state, scenario=scenario, tick_time=tick_time)
-                self._startup_merchants_launched = True
-
-            arrived_ships = self._store.complete_ship_arrivals_with_details(
-                tick_time.isoformat(),
-                now_iso=tick_time.isoformat(),
-            )
-            self._apply_lifecycle(
-                interval_seconds=interval_seconds,
-                tick_time=tick_time,
+            result = self._engine.tick(
+                state=state,
                 scenario=scenario,
-                arrived_ships=arrived_ships,
+                tick_time=tick_time,
+                interval_seconds=interval_seconds,
+                wait_seconds=wait_seconds,
+                startup_merchants_launched=self._startup_merchants_launched,
+                launch_startup_merchants=self._launch_all_merchants_at_startup,
+                complete_arrivals=lambda t: self._store.complete_ship_arrivals_with_details(
+                    t.isoformat(), now_iso=t.isoformat()
+                ),
+                apply_lifecycle=self._apply_lifecycle,
+                is_globally_interrupted=self._is_globally_interrupted,
+                build_event=self._build_event,
+                apply_faults=self._apply_faults,
+                delayed_insert_pause=lambda _event: self._stop_event.wait(timeout=1.5),
+                persist_and_publish_event=self._persist_and_publish_event,
+                advance_sim_time=self._advance_sim_time,
             )
 
-            if self._is_globally_interrupted(scenario):
-                self._advance_sim_time(tick_time, interval_seconds)
-                if self._stop_event.wait(timeout=min(1.0, wait_seconds)):
-                    break
-                continue
+            self._startup_merchants_launched = result.startup_merchants_launched
 
-            event = self._build_event(state, scenario, tick_time)
-            if event is None:
-                self._advance_sim_time(tick_time, interval_seconds)
-                if self._stop_event.wait(timeout=min(1.0, wait_seconds)):
-                    break
-                continue
+            # wait_seconds=0.0 signals the engine encountered a stop condition mid-tick
+            if result.wait_seconds == 0.0:
+                break
 
-            self._apply_faults(event, state)
-
-            if "delayed_insert" in event.get("fault_flags", []):
-                if self._stop_event.wait(timeout=1.5):
-                    break
-            self._persist_and_publish_event(event, state)
-
-            self._advance_sim_time(tick_time, interval_seconds)
-
-            if self._stop_event.wait(timeout=wait_seconds):
+            if self._stop_event.wait(timeout=result.wait_seconds):
                 break
 
     def _ensure_rng(self, state: dict[str, Any]) -> None:
@@ -218,10 +212,16 @@ class DepartureGenerator(threading.Thread):
         if age_update_days > 0.0:
             self._store.increment_ship_age(age_update_days, now_iso=tick_time.isoformat())
 
-        self._manage_pirate_activity(
+        apply_pirate_activity_policy(
             tick_time=tick_time,
             elapsed_days=elapsed_days,
             lifecycle_conf=effective_lifecycle,
+            runtime=self._runtime,
+            store=self._store,
+            rng=self._rng,
+            station_lookup=self._station_lookup,
+            parse_iso=self._parse_iso,
+            end_pirate_event=self._end_pirate_event,
         )
         self._apply_pirate_arrival_effects(
             tick_time=tick_time,
@@ -233,46 +233,40 @@ class DepartureGenerator(threading.Thread):
         if not active_ships:
             return
 
-        self._run_decommission(
+        apply_decommission_policy(
             active_ships=active_ships,
             elapsed_days=elapsed_days,
             tick_time=tick_time,
             lifecycle_conf=effective_lifecycle,
+            store=self._store,
+            rng=self._rng,
         )
         active_ships = self._store.list_active_ships_for_lifecycle()
         if not active_ships:
             return
 
-        self._run_war_impact(
+        apply_war_impact_policy(
             active_ships=active_ships,
             elapsed_days=elapsed_days,
             tick_time=tick_time,
             lifecycle_conf=effective_lifecycle,
-        )
-        active_ships = self._store.list_active_ships_for_lifecycle()
-        self._run_build_queue(
-            active_ships=active_ships,
-            elapsed_days=elapsed_days,
-            tick_time=tick_time,
-            lifecycle_conf=effective_lifecycle,
-        )
-
-    def _manage_pirate_activity(
-        self,
-        tick_time: datetime,
-        elapsed_days: float,
-        lifecycle_conf: dict[str, Any],
-    ) -> None:
-        apply_pirate_activity_policy(
-            tick_time=tick_time,
-            elapsed_days=elapsed_days,
-            lifecycle_conf=lifecycle_conf,
-            runtime=self._runtime,
             store=self._store,
             rng=self._rng,
-            station_lookup=self._station_lookup,
-            parse_iso=self._parse_iso,
-            end_pirate_event=self._end_pirate_event,
+        )
+        active_ships = self._store.list_active_ships_for_lifecycle()
+        _, self._next_ship_sequence = apply_build_queue_policy(
+            active_ships=active_ships,
+            elapsed_days=elapsed_days,
+            tick_time=tick_time,
+            lifecycle_conf=effective_lifecycle,
+            store=self._store,
+            rng=self._rng,
+            ship_generation=self._ship_generation,
+            naming_config=self._naming,
+            next_ship_sequence=self._next_ship_sequence,
+            ship_lookup=self._ship_lookup,
+            pick_weighted_key=self._pick_weighted_key,
+            pick_station_by_policy=self._pick_station_by_policy,
         )
 
     def _apply_pirate_arrival_effects(
@@ -423,60 +417,6 @@ class DepartureGenerator(threading.Thread):
         except ValueError:
             return None
 
-    def _run_decommission(
-        self,
-        active_ships: list[dict[str, Any]],
-        elapsed_days: float,
-        tick_time: datetime,
-        lifecycle_conf: dict[str, Any],
-    ) -> None:
-        apply_decommission_policy(
-            active_ships=active_ships,
-            elapsed_days=elapsed_days,
-            tick_time=tick_time,
-            lifecycle_conf=lifecycle_conf,
-            store=self._store,
-            rng=self._rng,
-        )
-
-    def _run_war_impact(
-        self,
-        active_ships: list[dict[str, Any]],
-        elapsed_days: float,
-        tick_time: datetime,
-        lifecycle_conf: dict[str, Any],
-    ) -> None:
-        apply_war_impact_policy(
-            active_ships=active_ships,
-            elapsed_days=elapsed_days,
-            tick_time=tick_time,
-            lifecycle_conf=lifecycle_conf,
-            store=self._store,
-            rng=self._rng,
-        )
-
-    def _run_build_queue(
-        self,
-        active_ships: list[dict[str, Any]],
-        elapsed_days: float,
-        tick_time: datetime,
-        lifecycle_conf: dict[str, Any],
-    ) -> None:
-        _, self._next_ship_sequence = apply_build_queue_policy(
-            active_ships=active_ships,
-            elapsed_days=elapsed_days,
-            tick_time=tick_time,
-            lifecycle_conf=lifecycle_conf,
-            store=self._store,
-            rng=self._rng,
-            ship_generation=self._ship_generation,
-            naming_config=self._naming,
-            next_ship_sequence=self._next_ship_sequence,
-            ship_lookup=self._ship_lookup,
-            pick_weighted_key=self._pick_weighted_key,
-            pick_station_by_policy=self._pick_station_by_policy,
-        )
-
     def _pick_weighted_key(self, weights: dict[str, float]) -> str:
         total = sum(weights.values())
         threshold = self._rng.random() * total
@@ -548,45 +488,24 @@ class DepartureGenerator(threading.Thread):
         scenario: dict[str, Any] | None,
         ship_faction: str | None = None,
     ) -> dict[str, Any] | None:
-        eta = self.estimate_arrival(departure_time, source_station_id, destination_station_id)
-
-        departed = self._store.begin_ship_transit(
+        event, self._event_counter, event_uid = create_departure_event(
             ship_id=ship_id,
             source_station_id=source_station_id,
             destination_station_id=destination_station_id,
-            departure_time=departure_time.isoformat(),
-            est_arrival_time=eta.isoformat(),
-            now_iso=departure_time.isoformat(),
+            departure_time=departure_time,
+            scenario=scenario,
+            ship_faction=ship_faction,
+            store=self._store,
+            station_lookup=self._station_lookup,
+            rng=self._rng,
+            estimate_arrival=self.estimate_arrival,
+            event_counter=self._event_counter,
         )
-        if not departed:
+        if event is None:
             return None
 
-        if ship_faction == "merchant":
-            source_station = self._station_lookup.get(source_station_id) or {}
-            source_cargo = str(source_station.get("cargo_type") or "").strip()
-            if source_cargo:
-                self._store.set_ship_cargo(ship_id=ship_id, cargo=source_cargo)
-
-        self._event_counter += 1
-        event_uid = f"EVT-{self._event_counter:09d}-{self._rng.getrandbits(32):08x}"
         self._last_event_uid = event_uid
-
-        payload = {
-            "event_uid": event_uid,
-            "departure_time": departure_time.isoformat(),
-            "ship_id": ship_id,
-            "source_station_id": source_station_id,
-            "destination_station_id": destination_station_id,
-            "est_arrival_time": eta.isoformat(),
-            "scenario": scenario["name"] if scenario else "baseline",
-        }
-
-        return {
-            **payload,
-            "fault_flags": [],
-            "malformed": False,
-            "payload_json": json.dumps(payload),
-        }
+        return event
 
     def _launch_all_merchants_at_startup(
         self,
@@ -648,48 +567,15 @@ class DepartureGenerator(threading.Thread):
         if not candidates:
             return None
 
-        pirate_conf = self._lifecycle.get("pirate_activity") or {}
-        pirate_state = runtime_snap.get("pirate_event")
-        pirate_active = bool(isinstance(pirate_state, dict) and pirate_state.get("active"))
-        idle_bounty_multiplier = max(
-            0.0,
-            float(pirate_conf.get("bounty_hunter_idle_departure_multiplier", 0.2)),
+        fallback = self._store.list_available_ships()
+        return select_ship(
+            candidates=candidates,
+            fallback_candidates=fallback,
+            scenario=scenario,
+            runtime_snap=runtime_snap,
+            pirate_conf=self._lifecycle.get("pirate_activity") or {},
+            rng=self._rng,
         )
-        active_bounty_multiplier = max(
-            0.0,
-            float(pirate_conf.get("bounty_hunter_active_departure_multiplier", 6.0)),
-        )
-        bounty_multiplier = active_bounty_multiplier if pirate_active else idle_bounty_multiplier
-
-        definition = SCENARIO_DEFINITIONS.get(scenario["name"], {}) if scenario else {}
-        faction_weights = definition.get("faction_weights")
-
-        if faction_weights:
-            candidates = [s for s in candidates if s["faction"] in faction_weights]
-            if not candidates:
-                fallback = self._store.list_available_ships()
-                if not fallback:
-                    return None
-                candidates = fallback
-
-        cumulative: list[float] = []
-        running = 0.0
-        for ship in candidates:
-            faction = str(ship.get("faction") or "")
-            base_weight = float(faction_weights.get(faction, 1.0)) if faction_weights else 1.0
-            multiplier = bounty_multiplier if faction == "bounty_hunter" else 1.0
-            effective_weight = max(0.0, base_weight * multiplier)
-            running += effective_weight
-            cumulative.append(running)
-
-        if running <= 0:
-            return self._rng.choice(candidates)
-
-        pick = self._rng.random() * running
-        for idx, threshold in enumerate(cumulative):
-            if pick <= threshold:
-                return candidates[idx]
-        return candidates[-1]
 
     def _is_ship_departure_ready(
         self,
@@ -713,33 +599,16 @@ class DepartureGenerator(threading.Thread):
         source_station_id: str,
         scenario: dict[str, Any] | None,
     ) -> str | None:
-        ship_size_class = str(ship.get("size_class") or "medium").strip().lower()
-
-        station_ids = list(self._station_lookup.keys())
-        if source_station_id in station_ids:
-            station_ids.remove(source_station_id)
-
-        station_ids = [sid for sid in station_ids if self._station_accepts_size_class(sid, ship_size_class)]
-        if not station_ids:
-            return None
-
-        pirate_conf = self._lifecycle.get("pirate_activity") or {}
-        pirate_state = self._runtime.snapshot().get("pirate_event")
-        is_bounty_hunter = str(ship.get("faction") or "") == "bounty_hunter"
-        if is_bounty_hunter and isinstance(pirate_state, dict) and pirate_state.get("active"):
-            affected = [sid for sid in pirate_state.get("affected_station_ids", []) if sid in station_ids]
-            if affected:
-                response_bias = min(1.0, max(0.0, float(pirate_conf.get("bounty_hunter_response_bias", 0.9))))
-                if self._rng.random() < response_bias:
-                    return self._rng.choice(affected)
-
-        if scenario and scenario.get("name") == "shortage":
-            keywords = SCENARIO_DEFINITIONS["shortage"].get("preferred_source_keywords", [])
-            preferred = [sid for sid in station_ids if any(key in sid for key in keywords)]
-            if preferred and self._rng.random() < 0.65:
-                return self._rng.choice(preferred)
-
-        return self._rng.choice(station_ids)
+        return pick_destination(
+            ship=ship,
+            source_station_id=source_station_id,
+            scenario=scenario,
+            station_lookup=self._station_lookup,
+            pirate_conf=self._lifecycle.get("pirate_activity") or {},
+            pirate_state=self._runtime.snapshot().get("pirate_event"),
+            rng=self._rng,
+            station_accepts_size_class=self._station_accepts_size_class,
+        )
 
     def _station_accepts_size_class(self, station_id: str, ship_size_class: str) -> bool:
         station = self._station_lookup.get(station_id)
@@ -798,44 +667,12 @@ class DepartureGenerator(threading.Thread):
         return departure_time + timedelta(hours=hours)
 
     def _apply_faults(self, event: dict[str, Any], state: dict[str, Any]) -> None:
-        active_faults = state.get("active_faults", {}) or {}
-        for fault_name, conf in active_faults.items():
-            rate = float(conf.get("rate", 0.0))
-            if self._rng.random() > rate:
-                continue
-
-            flags = event.setdefault("fault_flags", [])
-            flags.append(fault_name)
-
-            if fault_name == "missing_field":
-                event["destination_station_id"] = None
-            elif fault_name == "invalid_enum":
-                raw = json.loads(event["payload_json"])
-                raw["route_priority"] = "totally_invalid"
-                event["payload_json"] = json.dumps(raw)
-            elif fault_name == "out_of_order_timestamp":
-                dt = datetime.fromisoformat(event["departure_time"]) - timedelta(minutes=self._rng.randint(5, 120))
-                event["departure_time"] = dt.isoformat()
-            elif fault_name == "malformed_payload":
-                event["payload_json"] = "{malformed-json"
-                event["malformed"] = True
-            elif fault_name == "duplicate_event_uid" and self._last_event_uid:
-                event["event_uid"] = self._last_event_uid
-            elif fault_name == "synthetic_error":
-                event["ship_id"] = None
-                event["source_station_id"] = None
-                event["destination_station_id"] = None
-                event["malformed"] = True
-            elif fault_name == "delayed_insert":
-                pass
-
-        if event.get("payload_json") and not event.get("malformed"):
-            try:
-                parsed = json.loads(event["payload_json"])
-                parsed["fault_flags"] = event.get("fault_flags", [])
-                event["payload_json"] = json.dumps(parsed)
-            except json.JSONDecodeError:
-                event["malformed"] = True
+        apply_faults(
+            event=event,
+            state=state,
+            rng=self._rng,
+            last_event_uid=self._last_event_uid,
+        )
 
     def _publish_event(self, event: dict[str, Any]) -> None:
         with self._subscribers_lock:
