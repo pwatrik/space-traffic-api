@@ -1,11 +1,13 @@
-"""One-shot helper: print the canonical first-N departure UIDs and core fields
-for the baseline deterministic run.  Used to seed tests/test_golden_snapshot.py.
+"""One-shot helper: print canonical first-N departure rows for seeded presets.
+
+Used to seed tests/test_golden_snapshot.py.
 
 Run from the repo root:
-    .venv\\Scripts\\python.exe scripts\\capture_golden_snapshot.py
+    .venv\\Scripts\\python.exe scripts\\capture_golden_snapshot.py --preset baseline
 """
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -18,11 +20,29 @@ from shadow.fixtures import DeterministicRun
 
 N = 5
 
+DEFAULT_SEED_BY_PRESET = {
+    "baseline": 99,
+    "war_heavy": 77,
+    "pirate_enabled": 55,
+}
+
 
 def main() -> None:
-    print(f"Collecting first {N} departures from baseline seed=99 rate=300 ...\n")
-    with DeterministicRun(preset="baseline", seed=99, rate=300) as run:
-        departures = run.collect_departures(n=N)
+    parser = argparse.ArgumentParser(description="Capture deterministic golden departures")
+    parser.add_argument("--preset", default="baseline", help="Preset name (baseline/war_heavy/pirate_enabled)")
+    parser.add_argument("--seed", type=int, default=None, help="Optional deterministic seed override")
+    parser.add_argument("--rate", type=int, default=300, help="Events per minute (default: 300)")
+    parser.add_argument("--count", type=int, default=N, help="Number of departures to capture (default: 5)")
+    args = parser.parse_args()
+
+    seed = args.seed if args.seed is not None else DEFAULT_SEED_BY_PRESET.get(args.preset, 99)
+
+    print(
+        f"Collecting first {args.count} departures from preset={args.preset} "
+        f"seed={seed} rate={args.rate} ...\n"
+    )
+    with DeterministicRun(preset=args.preset, seed=seed, rate=args.rate) as run:
+        departures = run.collect_departures(n=args.count)
 
     snapshot = [
         {

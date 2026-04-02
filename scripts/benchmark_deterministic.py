@@ -7,7 +7,7 @@ Runs the simulation under the canonical baseline preset and measures:
 
 Usage (from repo root)::
 
-    .venv\\Scripts\\python.exe scripts\\benchmark_deterministic.py [--events N] [--rate R]
+    .venv\\Scripts\\python.exe scripts\\benchmark_deterministic.py [--events N] [--rate R] [--output PATH]
 
 Output: printed table + benchmark_results.json written to the repo root.
 """
@@ -136,11 +136,19 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Deterministic simulation benchmark")
     parser.add_argument("--events", type=int, default=10, help="Target departure count (default: 10)")
     parser.add_argument("--rate", type=int, default=300, help="Events per minute (default: 300)")
+    parser.add_argument(
+        "--output",
+        default="benchmark_results.json",
+        help="Path for benchmark JSON output (default: benchmark_results.json)",
+    )
     args = parser.parse_args()
 
     results = run_benchmark(n_events=args.events, rate=args.rate)
 
-    out_path = repo / "benchmark_results.json"
+    out_path = Path(args.output)
+    if not out_path.is_absolute():
+        out_path = repo / out_path
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
     print(f"Results written to {out_path}")
 

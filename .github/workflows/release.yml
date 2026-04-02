@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  release-validate-and-package:
+    name: Validate + Package Release Artifacts
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run release smoke gate
+        run: python scripts/release_smoke_gate.py --report-out artifacts/smoke_report.json
+
+      - name: Run full suite
+        run: pytest -q
+
+      - name: Run deterministic benchmark
+        run: python scripts/benchmark_deterministic.py --events 10 --rate 300 --output artifacts/benchmark_results.json
+
+      - name: Collect release artifacts
+        run: |
+          mkdir -p artifacts
+          cp docs/openapi.yaml artifacts/openapi.yaml
+          cp README.md artifacts/README.release.md
+
+      - name: Upload artifact bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts-${{ github.ref_name }}
+          path: artifacts/
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/openapi.yaml
+            artifacts/smoke_report.json
+            artifacts/benchmark_results.json
+            artifacts/README.release.md

@@ -43,8 +43,10 @@ docker run --rm -p 8000:8000 space-traffic-api
 - Pull requests and pushes to `main` run fast checks with slow tests excluded.
 - Nightly CI runs the full suite, then repeats shadow slow tests 3 times to detect flakes.
 - Release smoke gate runs on push/manual and enforces a compact pre-release checklist.
+- Dedicated release workflow runs on `v*` tags and publishes release artifacts.
 
 Workflow file: `.github/workflows/ci.yml`
+Release workflow: `.github/workflows/release.yml`
 
 ## Release Smoke Gate
 
@@ -59,6 +61,12 @@ Run locally:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\release_smoke_gate.py
+```
+
+Write a machine-readable smoke report artifact:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\release_smoke_gate.py --report-out artifacts\smoke_report.json
 ```
 
 ## Determinism Contract + Perf Baseline
@@ -77,6 +85,12 @@ Run baseline benchmark:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\benchmark_deterministic.py --events 10 --rate 300
+```
+
+Write benchmark output to a release artifact path:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\benchmark_deterministic.py --events 10 --rate 300 --output artifacts\benchmark_results.json
 ```
 
 ## Authentication
