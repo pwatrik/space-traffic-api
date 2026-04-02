@@ -9,7 +9,8 @@ Usage (from repo root)::
 
     .venv\\Scripts\\python.exe scripts\\benchmark_deterministic.py [--events N] [--rate R] [--output PATH]
 
-Output: printed table + benchmark_results.json written to the repo root.
+Output: printed table + benchmark JSON written to PATH (default: repo_root/benchmark_results.json;
+relative PATHs are resolved under the repo root).
 """
 from __future__ import annotations
 
