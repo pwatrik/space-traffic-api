@@ -43,9 +43,10 @@ class SimulationService:
     def is_running(self) -> bool:
         return self._generator.is_alive()
 
-    def snapshot(self) -> dict[str, Any]:
+    def snapshot(self, counts: dict[str, Any] | None = None) -> dict[str, Any]:
         state = self._runtime.snapshot()
-        counts = self._store.get_counts()
+        if counts is None:
+            counts = self._store.get_counts()
         generator_metrics = self._generator.runtime_metrics()
         control_metrics = self._runtime.subscriber_metrics()
         generator_metrics["control_events_total"] = counts.get("control_events", 0)

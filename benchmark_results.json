@@ -6,11 +6,18 @@
   "actual_events": 10,
   "elapsed_seconds": 0.153,
   "departures_per_second": 65.269,
-  "tick_latency": {},
+  "tick_latency": {
+    "p50_ms": 2.0,
+    "p95_ms": 4.0,
+    "p99_ms": 5.0,
+    "max_ms": 5.1,
+    "mean_ms": 2.3,
+    "samples": 12
+  },
   "final_engine_metrics": {
-    "tick_count": 0,
-    "tick_latency_ms_avg": 0.0,
-    "tick_latency_ms_max": 0.0,
+    "tick_count": 11,
+    "tick_latency_ms_avg": 2.0,
+    "tick_latency_ms_max": 5.0,
     "departures_emitted_total": 11
   }
 }

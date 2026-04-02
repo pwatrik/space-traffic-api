@@ -40,7 +40,7 @@ def create_api_blueprint(
     @bp.get("/healthz")
     def healthz() -> Response:
         counts = store.get_counts()
-        snapshot = simulation.snapshot()
+        snapshot = simulation.snapshot(counts=counts)
         db_max_size_mb = int(snapshot.get("db_max_size_mb", 512))
         return jsonify(
             {
@@ -103,10 +103,11 @@ def create_api_blueprint(
 
     @bp.get("/stats")
     def stats() -> Response:
-        snapshot = simulation.snapshot()
+        counts = store.get_counts()
+        snapshot = simulation.snapshot(counts=counts)
         return jsonify(
             {
-                "summary": store.get_counts(),
+                "summary": counts,
                 "factions": store.get_ship_stats_by_faction(),
                 "ship_types": store.get_ship_stats_by_type(),
                 "cargo_types": store.get_cargo_stats(),

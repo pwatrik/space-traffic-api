@@ -31,22 +31,6 @@ from shadow.fixtures import DeterministicRun  # noqa: E402
 # Benchmark runner
 # ---------------------------------------------------------------------------
 
-def _collect_latency_samples(run: DeterministicRun, n_samples: int) -> list[float]:
-    """Poll /healthz n_samples times and collect tick_latency_ms_last readings."""
-    headers = run.headers
-    samples: list[float] = []
-    for _ in range(n_samples):
-        resp = run.client.get("/healthz", headers=headers)
-        if resp.status_code == 200:
-            data = resp.get_json() or {}
-            rm = data.get("runtime_metrics", {})
-            val = rm.get("tick_latency_ms_last")
-            if val and val > 0:
-                samples.append(float(val))
-        time.sleep(0.05)
-    return samples
-
-
 def run_benchmark(n_events: int = 10, rate: int = 300) -> dict:
     print(f"\nBenchmark: baseline preset | seed=99 | rate={rate} ev/min | target={n_events} departures")
     print("-" * 70)
@@ -55,7 +39,7 @@ def run_benchmark(n_events: int = 10, rate: int = 300) -> dict:
         t_start = time.perf_counter()
 
         # Collect departures and interleave latency sampling
-        deadline = t_start + 60.0
+        deadline = time.monotonic() + 60.0
         departures: list[dict] = []
         latency_samples: list[float] = []
         poll_interval = 0.05
@@ -69,7 +53,7 @@ def run_benchmark(n_events: int = 10, rate: int = 300) -> dict:
             if resp.status_code == 200:
                 departures = resp.get_json().get("departures", [])
 
-            # Sample tick latency on every 5th poll
+            # Sample tick latency on every poll until 200 samples are collected
             if len(latency_samples) < 200:
                 healthz = run.client.get("/healthz", headers=run.headers)
                 if healthz.status_code == 200:
