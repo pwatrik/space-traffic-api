@@ -93,6 +93,80 @@ Write benchmark output to a release artifact path:
 .\.venv\Scripts\python.exe scripts\benchmark_deterministic.py --events 10 --rate 300 --output artifacts\benchmark_results.json
 ```
 
+## Release Runbook
+
+Use this sequence before creating a `v*` tag.
+
+1. Run the release smoke gate and write an artifact.
+
+```powershell
+.\.venv\Scripts\python.exe scripts\release_smoke_gate.py --report-out artifacts\smoke_report.json
+```
+
+Expected pass signal:
+- terminal includes `=== release smoke gate: PASS ===`
+- `artifacts\smoke_report.json` exists with `"status": "pass"`
+
+2. Run the deterministic benchmark and write an artifact.
+
+```powershell
+.\.venv\Scripts\python.exe scripts\benchmark_deterministic.py --events 10 --rate 300 --output artifacts\benchmark_results.json
+```
+
+Expected pass signal:
+- terminal prints `Results written to ...benchmark_results.json`
+- artifact contains `elapsed_seconds`, `departures_per_second`, and `tick_latency`
+
+3. (If deterministic behavior intentionally changed) refresh and update golden snapshots.
+
+```powershell
+.\.venv\Scripts\python.exe scripts\capture_golden_snapshot.py --preset baseline
+.\.venv\Scripts\python.exe scripts\capture_golden_snapshot.py --preset war_heavy
+.\.venv\Scripts\python.exe scripts\capture_golden_snapshot.py --preset pirate_enabled
+```
+
+Expected pass signal:
+- output rows match intended deterministic changes
+- `tests/test_golden_snapshot.py` updated in the same PR with rationale
+
+4. Run full regression before tag.
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+Expected pass signal:
+- all tests pass with no failures
+
+5. Create and push the release tag.
+
+```powershell
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+Expected CI result:
+- [release workflow](.github/workflows/release.yml) runs and publishes artifacts:
+  - `openapi.yaml`
+  - `smoke_report.json`
+  - `benchmark_results.json`
+  - `README.release.md`
+
+### Failure Triage
+
+- Smoke gate fails in fast/golden/shadow checks:
+  - run the exact failing pytest command printed by `scripts/release_smoke_gate.py`
+  - fix regression first; do not update golden snapshots unless behavior change is intentional
+- Smoke gate fails runtime metrics sanity:
+  - inspect `/healthz` runtime metrics (`tick_count`, backlog values)
+  - verify generator start/stop behavior and control event subscriber cleanup
+- Benchmark output looks suspicious (for example very low throughput):
+  - re-run once to rule out transient machine load
+  - compare against recent `benchmark_results.json` from the latest successful release tag
+- Golden snapshot mismatch:
+  - verify seed/preset/rate are unchanged
+  - if intentional, refresh via capture script and review diffs carefully in `tests/test_golden_snapshot.py`
+
 ## Authentication
 
 No authentication is required. All endpoints are public.
