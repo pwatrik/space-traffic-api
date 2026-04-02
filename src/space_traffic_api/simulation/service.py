@@ -21,6 +21,7 @@ class SimulationService:
         ships: list[dict[str, Any]],
         catalog: dict[str, Any] | None = None,
     ):
+        self._store = store
         self._runtime = RuntimeState(config=config, store=store)
         self._generator = DepartureGenerator(
             store=store,
@@ -44,8 +45,19 @@ class SimulationService:
 
     def snapshot(self) -> dict[str, Any]:
         state = self._runtime.snapshot()
+        counts = self._store.get_counts()
+        generator_metrics = self._generator.runtime_metrics()
+        control_metrics = self._runtime.subscriber_metrics()
+        generator_metrics["control_events_total"] = counts.get("control_events", 0)
+        generator_metrics["control_event_subscribers"] = control_metrics["subscribers"]
+        generator_metrics["control_event_backlog_total"] = control_metrics["backlog_total"]
+        generator_metrics["control_event_backlog_max"] = control_metrics["backlog_max"]
+        generator_metrics["departures_total"] = counts.get("departures", 0)
+        generator_metrics["ships_in_transit"] = counts.get("ships_in_transit", 0)
+
         state["effective_lifecycle"] = self._generator.effective_lifecycle_config(state.get("active_scenario"))
         state["effective_ship_generation"] = self._generator.effective_ship_generation_config()
+        state["runtime_metrics"] = generator_metrics
         return state
 
     def patch_config(self, patch: dict[str, Any]) -> dict[str, Any]:

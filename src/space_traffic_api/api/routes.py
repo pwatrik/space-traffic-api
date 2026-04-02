@@ -52,6 +52,7 @@ def create_api_blueprint(
                 "deterministic_mode": snapshot.get("deterministic_mode"),
                 "db_size_bytes": store.get_db_size_bytes(),
                 "db_max_size_bytes": db_max_size_mb * 1024 * 1024,
+                "runtime_metrics": snapshot.get("runtime_metrics", {}),
             }
         )
 
@@ -112,6 +113,7 @@ def create_api_blueprint(
                 "ship_states": store.get_ship_state_summary(),
                 "pirate_strength": snapshot.get("pirate_strength", 0.0),
                 "active_scenario": snapshot.get("active_scenario"),
+                "runtime_metrics": snapshot.get("runtime_metrics", {}),
             }
         )
 

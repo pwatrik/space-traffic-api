@@ -4,6 +4,7 @@ import queue
 import random
 import threading
 import time
+from collections import deque
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -65,6 +66,15 @@ class DepartureGenerator(threading.Thread):
         self._age_update_accumulator_days: float = 0.0
         self._startup_merchants_launched = False
         self._engine = SimulationEngine()
+        self._metrics_lock = threading.Lock()
+        self._tick_count = 0
+        self._tick_latency_total_ms = 0.0
+        self._tick_latency_last_ms = 0.0
+        self._tick_latency_max_ms = 0.0
+        self._departures_emitted = 0
+        self._last_tick_completed_at: str | None = None
+        self._departures_window_seconds = 60.0
+        self._departure_timestamps: deque[float] = deque()
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -94,8 +104,28 @@ class DepartureGenerator(threading.Thread):
         defaults["ship_speed_multiplier"] = self._ship_speed_multiplier
         return {"defaults": defaults}
 
+    def runtime_metrics(self) -> dict[str, Any]:
+        with self._metrics_lock:
+            now = time.monotonic()
+            while self._departure_timestamps and (now - self._departure_timestamps[0]) > self._departures_window_seconds:
+                self._departure_timestamps.popleft()
+
+            tick_count = self._tick_count
+            avg_latency = self._tick_latency_total_ms / tick_count if tick_count else 0.0
+
+            return {
+                "tick_count": tick_count,
+                "tick_latency_ms_last": round(self._tick_latency_last_ms, 3),
+                "tick_latency_ms_avg": round(avg_latency, 3),
+                "tick_latency_ms_max": round(self._tick_latency_max_ms, 3),
+                "departures_emitted_total": self._departures_emitted,
+                "departures_per_minute_recent": len(self._departure_timestamps),
+                "last_tick_completed_at": self._last_tick_completed_at,
+            }
+
     def run(self) -> None:
         while not self._stop_event.is_set():
+            tick_started = time.perf_counter()
             state = self._runtime.snapshot()
             self._ensure_rng(state)
 
@@ -128,6 +158,13 @@ class DepartureGenerator(threading.Thread):
             )
 
             self._startup_merchants_launched = result.startup_merchants_launched
+            tick_latency_ms = (time.perf_counter() - tick_started) * 1000.0
+            with self._metrics_lock:
+                self._tick_count += 1
+                self._tick_latency_last_ms = tick_latency_ms
+                self._tick_latency_total_ms += tick_latency_ms
+                self._tick_latency_max_ms = max(self._tick_latency_max_ms, tick_latency_ms)
+                self._last_tick_completed_at = datetime.now(UTC).isoformat()
 
             # wait_seconds=0.0 signals the engine encountered a stop condition mid-tick
             if result.wait_seconds == 0.0:
@@ -553,6 +590,12 @@ class DepartureGenerator(threading.Thread):
 
         self._publish_event(event)
         self._last_event_uid = event["event_uid"]
+        with self._metrics_lock:
+            now = time.monotonic()
+            self._departures_emitted += 1
+            self._departure_timestamps.append(now)
+            while self._departure_timestamps and (now - self._departure_timestamps[0]) > self._departures_window_seconds:
+                self._departure_timestamps.popleft()
 
     def _pick_ship(self, scenario: dict[str, Any] | None, tick_time: datetime) -> dict[str, Any] | None:
         candidates = self._store.list_available_ships()

@@ -88,6 +88,16 @@ class RuntimeState:
             if q in self._subscribers:
                 self._subscribers.remove(q)
 
+    def subscriber_metrics(self) -> dict[str, int]:
+        with self._subscribers_lock:
+            subscribers = list(self._subscribers)
+        backlogs = [q.qsize() for q in subscribers]
+        return {
+            "subscribers": len(subscribers),
+            "backlog_total": sum(backlogs),
+            "backlog_max": max(backlogs) if backlogs else 0,
+        }
+
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             self._expire_unlocked()
