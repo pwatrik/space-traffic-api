@@ -19,3 +19,10 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 space_traffic_api = ["data/*.json", "templates/*.html", "static/*.css", "static/*.js"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+markers = [
+    "slow: marks tests as slow-running (deselect with '-m not slow')",
+]
