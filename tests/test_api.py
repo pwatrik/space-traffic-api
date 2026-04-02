@@ -1,4 +1,4 @@
-import os
+﻿import os
 import time
 from tempfile import TemporaryDirectory
 
@@ -179,24 +179,21 @@ def test_merchant_departure_updates_ship_cargo_from_source_station(monkeypatch):
             stations = stations_resp.get_json()["stations"]
             station_cargo = {row["id"]: row.get("cargo_type", "") for row in stations}
 
-            merchant_ship = None
             merchant_departure = None
 
             deadline = time.time() + 6.0
             while time.time() < deadline and merchant_departure is None:
-                ships_resp = client.get("/ships?limit=5000")
-                assert ships_resp.status_code == 200
-                ships = ships_resp.get_json()["ships"]
-                ship_by_id = {row["id"]: row for row in ships}
-
                 dep_resp = client.get("/departures?limit=200")
                 assert dep_resp.status_code == 200
                 departures = dep_resp.get_json()["departures"]
 
+                ships_resp = client.get("/ships?limit=5000")
+                assert ships_resp.status_code == 200
+                ship_by_id = {row["id"]: row for row in ships_resp.get_json()["ships"]}
+
                 for dep in departures:
                     ship = ship_by_id.get(dep["ship_id"])
                     if ship and ship.get("faction") == "merchant":
-                        merchant_ship = ship
                         merchant_departure = dep
                         break
 
@@ -204,11 +201,17 @@ def test_merchant_departure_updates_ship_cargo_from_source_station(monkeypatch):
                     time.sleep(0.2)
 
             assert merchant_departure is not None
-            assert merchant_ship is not None
 
             source_station_id = merchant_departure["source_station_id"]
             expected_cargo = station_cargo.get(source_station_id, "")
             assert expected_cargo
+
+            # Re-fetch ships after finding the departure so cargo reflects the
+            # set_ship_cargo update made by create_departure_event.
+            refreshed = client.get("/ships?limit=5000")
+            assert refreshed.status_code == 200
+            refreshed_by_id = {row["id"]: row for row in refreshed.get_json()["ships"]}
+            merchant_ship = refreshed_by_id[merchant_departure["ship_id"]]
             assert merchant_ship["cargo"] == expected_cargo
         finally:
             app.config["space_simulation"].stop(timeout=6.0)
