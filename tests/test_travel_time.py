@@ -135,3 +135,61 @@ def test_orbital_eta_stable_after_tick_advancement_when_disabled(monkeypatch, tm
         assert duration_before == duration_after
     finally:
         app.config["space_store"].close()
+
+
+def test_departure_persists_est_arrival_time_even_as_orbital_state_moves(monkeypatch, tmp_path):
+    db_path = tmp_path / "travel_time_persisted_eta.db"
+    monkeypatch.setenv("SPACE_TRAFFIC_DB_PATH", str(db_path))
+    monkeypatch.setenv("SPACE_TRAFFIC_API_KEY", "test-key")
+    monkeypatch.setenv("SPACE_TRAFFIC_DISABLE_GENERATOR", "true")
+    monkeypatch.setenv("SPACE_TRAFFIC_DETERMINISTIC_MODE", "true")
+    monkeypatch.setenv("SPACE_TRAFFIC_DETERMINISTIC_SEED", "424242")
+    monkeypatch.setenv("SPACE_TRAFFIC_ORBITAL_DISTANCE_MODEL_ENABLED", "true")
+    monkeypatch.setenv("SPACE_TRAFFIC_ORBITAL_DISTANCE_MULTIPLIER_MIN", "0.7")
+    monkeypatch.setenv("SPACE_TRAFFIC_ORBITAL_DISTANCE_MULTIPLIER_MAX", "1.3")
+
+    app = create_app()
+    try:
+        simulation = app.config["space_simulation"]
+        store = app.config["space_store"]
+        generator = simulation._generator
+        runtime_state = simulation.snapshot()
+        generator._ensure_rng(runtime_state)
+        departure_time = generator._current_tick_time(runtime_state)
+
+        ship = next(iter(store.list_available_ships()))
+        source = ship["current_station_id"]
+        destination = generator._pick_destination(ship, source, scenario=None)
+        assert destination is not None
+
+        generator._rng = random.Random(1337)
+        event = generator._create_departure_event(
+            ship_id=ship["ship_id"],
+            source_station_id=source,
+            destination_station_id=destination,
+            departure_time=departure_time,
+            scenario=None,
+            ship_faction=str(ship.get("faction") or ""),
+        )
+        assert event is not None
+        persisted_eta = event["est_arrival_time"]
+
+        ship_state_before = next(
+            row for row in store.list_ship_states(in_transit=True, limit=5000)
+            if row["ship_id"] == ship["ship_id"]
+        )
+        assert ship_state_before["est_arrival_time"] == persisted_eta
+
+        generator._advance_sim_time(departure_time, 180 * 86400.0)
+
+        generator._rng = random.Random(1337)
+        recomputed_eta = simulation.estimate_arrival(departure_time, source, destination).isoformat()
+        ship_state_after = next(
+            row for row in store.list_ship_states(in_transit=True, limit=5000)
+            if row["ship_id"] == ship["ship_id"]
+        )
+
+        assert recomputed_eta != persisted_eta
+        assert ship_state_after["est_arrival_time"] == persisted_eta
+    finally:
+        app.config["space_store"].close()
