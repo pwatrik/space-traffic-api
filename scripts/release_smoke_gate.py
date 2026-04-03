@@ -172,6 +172,14 @@ def main() -> None:
             "category": failed_category,
             "reason": str(exc),
         }
+        report["checks"].append(
+            {
+                "name": failed_label,
+                "category": failed_category,
+                "status": "fail",
+                "details": str(exc),
+            }
+        )
 
         _write_report(args.report_out, report)
         print("\n=== release smoke gate: FAIL ===")
