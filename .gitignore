@@ -31,6 +31,8 @@ benchmark_results.json
 pytest_out.txt
 pytest_phase52.txt
 pytest_phase52.err.txt
+pytest_full.out
+pytest_full.err
 full_phase51.txt
 full_suite.txt
 parity_all.txt
