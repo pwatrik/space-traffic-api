@@ -121,3 +121,40 @@ def test_merchant_routing_is_deterministic_with_seeded_rng():
     ]
 
     assert seq1 == seq2
+
+
+def test_merchant_penalizes_high_fuel_cost_destination():
+    """Merchant prefers a nearby moderate-value over a far same-value when fuel cost is high."""
+    station_lookup = {
+        "SRC": {
+            "id": "SRC",
+            "economy_derived": {"local_value_score": 1.0, "fuel_pressure_score": 1.1},
+        },
+        "DST_NEAR": {
+            "id": "DST_NEAR",
+            "economy_derived": {"local_value_score": 1.5, "fuel_pressure_score": 1.1},
+        },
+        "DST_FAR": {
+            "id": "DST_FAR",
+            "economy_derived": {"local_value_score": 1.5, "fuel_pressure_score": 2.2},
+        },
+    }
+    ship = {"faction": "merchant", "size_class": "medium"}
+    rng = random.Random(7777)
+    counts = {"DST_NEAR": 0, "DST_FAR": 0}
+
+    for _ in range(600):
+        dst = pick_destination(
+            ship=ship,
+            source_station_id="SRC",
+            scenario=None,
+            station_lookup=station_lookup,
+            pirate_conf={},
+            pirate_state=None,
+            rng=rng,
+            station_accepts_size_class=_accepts_all,
+            economy_preference_weight=0.5,
+        )
+        counts[dst] += 1
+
+    assert counts["DST_NEAR"] > counts["DST_FAR"]

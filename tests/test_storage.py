@@ -179,6 +179,28 @@ def test_apply_departure_economy_impact_is_deterministic_with_seeded_rng():
             s2.close()
 
 
+def test_fuel_pressure_score_higher_for_distant_station():
+    with TemporaryDirectory() as tmp:
+        db_path = os.path.join(tmp, "test.db")
+        store = SQLiteStore(db_path)
+        store.init_schema()
+        store.seed_stations(build_stations())
+        try:
+            rows, _ = store.list_stations(limit=5000, order_by="id", order="asc")
+            by_id = {row["id"]: row for row in rows}
+
+            earth = by_id.get("STN-PLANET-EARTH")
+            pluto = by_id.get("STN-PLANET-PLUTO")
+
+            assert earth is not None and pluto is not None
+            earth_fuel = float(earth["economy_derived"]["fuel_pressure_score"])
+            pluto_fuel = float(pluto["economy_derived"]["fuel_pressure_score"])
+
+            assert pluto_fuel > earth_fuel
+        finally:
+            store.close()
+
+
 def test_economy_magnitude_controls_are_deterministic_with_seeded_rng():
     with TemporaryDirectory() as tmp1, TemporaryDirectory() as tmp2:
         stations = build_stations()

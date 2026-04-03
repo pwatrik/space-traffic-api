@@ -73,7 +73,9 @@ Status: In progress
 - Completed chunk 5 tests: merchant preference behavior, non-merchant neutrality, and deterministic seeded routing
 - Completed chunk 6: economy tuning knobs for merchant preference, drift magnitude, and departure impact magnitude wired through config, runtime patch controls, and simulation paths
 - Completed chunk 6 tests: env/default validation, PATCH /config clamping, and fixed-magnitude deterministic economy-state checks
-- Next chunk: add first fuel pressure behavior so route distance and fuel demand start influencing station value and merchant routing
+- Completed chunk 7: distance_rank seeded into economy_profile per station body position; fuel_pressure_score now scales with orbital distance; merchant routing applies fuel cost ratio (dest/source fuel pressure) to net effective destination value
+- Completed chunk 7 tests: distance_rank presence + solar position correctness, moon rank inheritance, fuel pressure higher for distant stations, merchant penalizes high-fuel-cost routes
+- Next chunk: add price drift driven by supply/demand imbalance so station price_index converges toward equilibrium and drives more dynamic merchant routing
 
 ### Goal
 Real economy with producers at stations, variable prices due to events, distance from materials, or station needs.

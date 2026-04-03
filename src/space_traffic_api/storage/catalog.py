@@ -160,10 +160,13 @@ class CatalogRepository:
         fuel = float(state.get("fuel_price_index", 1.0) or 1.0)
         material_demand = float(profile.get("manufacturing_material_demand", 0.5) or 0.5)
 
+        distance_rank = float(profile.get("distance_rank", 5) or 5)
+        normalized_dist = (distance_rank - 1.0) / 9.0  # [0.0 Mercury … 1.0 Pluto]
+
         safe_supply = max(0.01, supply)
         local_value_score = (demand / safe_supply) * price
         scarcity_index = demand / safe_supply
-        fuel_pressure_score = fuel * (1.0 + (material_demand * 0.15))
+        fuel_pressure_score = fuel * (1.0 + material_demand * 0.15 + normalized_dist * 0.5)
 
         return {
             "local_value_score": round(max(0.1, min(10.0, local_value_score)), 3),

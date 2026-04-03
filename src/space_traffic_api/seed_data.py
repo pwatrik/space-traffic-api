@@ -441,6 +441,7 @@ def load_seed_catalog(catalog_path: str | None = None) -> dict[str, Any]:
 
 def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     catalog = catalog or load_seed_catalog(catalog_path)
+    distance_order: dict[str, int] = catalog["celestial"]["distance_order"]
     templates = catalog["stations"]["templates"]
     stations: list[dict[str, Any]] = []
     cargo_types = list(catalog.get("ship_generation", {}).get("cargo_types", []))
@@ -483,7 +484,7 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
     def _station_cargo() -> str:
         return rng.choice(cargo_types)
 
-    def _station_economy_profile(body_type: str) -> dict[str, float | str]:
+    def _station_economy_profile(body_type: str, distance_rank: int = 5) -> dict[str, float | str]:
         # These are placeholder station attributes for Milestone 2 economy work.
         baseline = {
             "planet": {
@@ -525,6 +526,7 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
         )
         row["producer_rate"] = round(max(0.01, min(0.25, float(row["producer_rate"]) + jitter() * 0.04)), 4)
         row["consumer_rate"] = round(max(0.01, min(0.25, float(row["consumer_rate"]) + jitter() * 0.04)), 4)
+        row["distance_rank"] = max(1, int(distance_rank))
         return row
 
     def _station_economy_state(cargo_type: str) -> dict[str, float | str]:
@@ -577,7 +579,7 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
                     "parent_body": planet,
                     "cargo_type": cargo_type,
                     "allowed_size_classes": template["allowed_size_classes"],
-                    "economy_profile": _station_economy_profile("planet"),
+                    "economy_profile": _station_economy_profile("planet", distance_rank=distance_order.get(planet, 5)),
                     "economy_state": _station_economy_state(cargo_type),
                 }
             )
@@ -599,7 +601,7 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
                     "parent_body": planet,
                     "cargo_type": cargo_type,
                     "allowed_size_classes": template["allowed_size_classes"],
-                    "economy_profile": _station_economy_profile("planet"),
+                    "economy_profile": _station_economy_profile("planet", distance_rank=distance_order.get(planet, 5)),
                     "economy_state": _station_economy_state(cargo_type),
                 }
             )
@@ -627,7 +629,7 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
                     "parent_body": parent,
                     "cargo_type": cargo_type,
                     "allowed_size_classes": template["allowed_size_classes"],
-                    "economy_profile": _station_economy_profile("moon"),
+                    "economy_profile": _station_economy_profile("moon", distance_rank=distance_order.get(parent, 5)),
                     "economy_state": _station_economy_state(cargo_type),
                 }
             )
@@ -650,7 +652,7 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
                         "parent_body": parent,
                         "cargo_type": cargo_type,
                         "allowed_size_classes": template["allowed_size_classes"],
-                        "economy_profile": _station_economy_profile("moon"),
+                        "economy_profile": _station_economy_profile("moon", distance_rank=distance_order.get(parent, 5)),
                         "economy_state": _station_economy_state(cargo_type),
                     }
                 )
@@ -672,7 +674,7 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
                 "parent_body": template["parent_body"] or "Asteroid Belt",
                 "cargo_type": cargo_type,
                 "allowed_size_classes": template["allowed_size_classes"],
-                "economy_profile": _station_economy_profile("asteroid"),
+                "economy_profile": _station_economy_profile("asteroid", distance_rank=distance_order.get("Asteroid Belt", 5)),
                 "economy_state": _station_economy_state(cargo_type),
             }
         )
