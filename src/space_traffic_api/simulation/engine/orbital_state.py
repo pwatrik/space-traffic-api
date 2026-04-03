@@ -64,6 +64,13 @@ class OrbitalBodyState:
             "y": round(self.y, 9),
         }
 
+    def advance(self, elapsed_days: float) -> None:
+        if elapsed_days <= 0:
+            return
+        self.phase_radians = (self.phase_radians + (self.angular_velocity_radians_per_day * elapsed_days)) % math.tau
+        self.x = math.cos(self.phase_radians) * self.radius_scale
+        self.y = math.sin(self.phase_radians) * self.radius_scale
+
 
 def build_orbital_body_templates(catalog: dict[str, Any], deterministic_seed: int) -> dict[str, OrbitalBodyTemplate]:
     celestial = catalog.get("celestial") if isinstance(catalog.get("celestial"), dict) else {}
@@ -111,3 +118,10 @@ def initialize_orbital_body_state(catalog: dict[str, Any], deterministic_seed: i
         body_id: OrbitalBodyState.from_template(template)
         for body_id, template in templates.items()
     }
+
+
+def advance_orbital_body_state(state_by_body: dict[str, OrbitalBodyState], elapsed_days: float) -> None:
+    if elapsed_days <= 0:
+        return
+    for body_state in state_by_body.values():
+        body_state.advance(elapsed_days)

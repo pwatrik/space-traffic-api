@@ -14,7 +14,7 @@ from ..seed_data import load_naming_config, orbital_anchor_body_for_station, sta
 from ..store import SQLiteStore
 from .engine.departure_builder import create_departure_event
 from .engine.fault_injector import apply_faults
-from .engine.orbital_state import OrbitalBodyState, initialize_orbital_body_state
+from .engine.orbital_state import OrbitalBodyState, advance_orbital_body_state, initialize_orbital_body_state
 from .engine.routing import pick_destination
 from .engine.ship_selector import select_ship
 from .engine.simulation_engine import SimulationEngine
@@ -771,6 +771,7 @@ class DepartureGenerator(threading.Thread):
         return self._sim_time
 
     def _advance_sim_time(self, tick_time: datetime, interval_seconds: float) -> None:
+        advance_orbital_body_state(self._orbital_state, interval_seconds / 86400.0)
         self._sim_time = tick_time + timedelta(seconds=interval_seconds)
         self._runtime.set_simulation_now(self._sim_time.isoformat())
 
