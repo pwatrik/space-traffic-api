@@ -112,6 +112,7 @@ def create_api_blueprint(
                 "ship_types": store.get_ship_stats_by_type(),
                 "cargo_types": store.get_cargo_stats(),
                 "ship_states": store.get_ship_state_summary(),
+                "economy_summary": store.get_economy_summary(),
                 "pirate_strength": snapshot.get("pirate_strength", 0.0),
                 "active_scenario": snapshot.get("active_scenario"),
                 "runtime_metrics": snapshot.get("runtime_metrics", {}),

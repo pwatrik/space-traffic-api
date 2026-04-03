@@ -372,6 +372,40 @@ class CatalogRepository:
 
             return len(updates)
 
+    def get_economy_summary(self) -> dict[str, Any]:
+        """Return aggregate price/supply/demand stats across all stations."""
+        with self._context.lock:
+            rows = self._context.conn.execute(
+                "SELECT economy_state FROM stations"
+            ).fetchall()
+
+        prices: list[float] = []
+        supplies: list[float] = []
+        demands: list[float] = []
+        for row in rows:
+            try:
+                state = json.loads(row["economy_state"]) if row["economy_state"] else {}
+            except json.JSONDecodeError:
+                state = {}
+            prices.append(float(state.get("price_index", 1.0) or 1.0))
+            supplies.append(float(state.get("supply_index", 1.0) or 1.0))
+            demands.append(float(state.get("demand_index", 1.0) or 1.0))
+
+        n = len(prices)
+        if n == 0:
+            return {"station_count": 0}
+
+        return {
+            "station_count": n,
+            "price_index_avg": round(sum(prices) / n, 3),
+            "price_index_min": round(min(prices), 3),
+            "price_index_max": round(max(prices), 3),
+            "supply_index_avg": round(sum(supplies) / n, 3),
+            "demand_index_avg": round(sum(demands) / n, 3),
+            "stations_above_equilibrium": sum(1 for p in prices if p > 1.0),
+            "stations_below_equilibrium": sum(1 for p in prices if p < 1.0),
+        }
+
     def get_ship_stats_by_faction(self) -> dict[str, int]:
         """Return ship count grouped by faction."""
         with self._context.lock:

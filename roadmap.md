@@ -81,7 +81,9 @@ Status: In progress
 - Completed chunk 9 tests: local_value_score scales with price_index (higher price → higher score), merchant prefers higher-price-index destination when routed via raw economy_state fallback
 - Completed chunk 10: departure impact now also eases destination price_index — arriving shipment signals incoming supply, applying a small downward price nudge (magnitude × 0.3 × [0.8–1.2]) clamped [0.5, 3.0]; goldens recaptured; 124 tests green
 - Completed chunk 10 tests: departure lowers destination price_index, departure price ease is deterministic with seeded RNG
-- Next chunk: expose economy tick controls (drift magnitude, departure impact magnitude) as live-patchable runtime knobs via PATCH /config, and wire a per-tick price_index summary into the /status endpoint so the current economy health is observable
+- Completed chunk 11: economy health observable via GET /stats — added get_economy_summary() to CatalogRepository and SQLiteStore; /stats now includes economy_summary with station_count, price_index_{avg,min,max}, supply_index_avg, demand_index_avg, stations_above/below_equilibrium; contract test updated; 125 tests green
+- Completed chunk 11 tests: /stats includes economy_summary with correct keys and valid bounds
+- Next chunk: surface economy_summary in the dashboard UI — add an Economy Health card to /ui showing avg price, supply, demand and equilibrium station counts, updating on each snapshot refresh
 
 ### Goal
 Real economy with producers at stations, variable prices due to events, distance from materials, or station needs.

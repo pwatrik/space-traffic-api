@@ -45,6 +45,7 @@ def test_stats_contract_shape_is_stable():
         "ship_types",
         "cargo_types",
         "ship_states",
+        "economy_summary",
         "pirate_strength",
         "active_scenario",
         "runtime_metrics",
