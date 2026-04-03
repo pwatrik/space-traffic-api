@@ -83,7 +83,8 @@ Status: In progress
 - Completed chunk 10 tests: departure lowers destination price_index, departure price ease is deterministic with seeded RNG
 - Completed chunk 11: economy health observable via GET /stats — added get_economy_summary() to CatalogRepository and SQLiteStore; /stats now includes economy_summary with station_count, price_index_{avg,min,max}, supply_index_avg, demand_index_avg, stations_above/below_equilibrium; contract test updated; 125 tests green
 - Completed chunk 11 tests: /stats includes economy_summary with correct keys and valid bounds
-- Next chunk: surface economy_summary in the dashboard UI — add an Economy Health card to /ui showing avg price, supply, demand and equilibrium station counts, updating on each snapshot refresh
+- Completed chunk 12: Economy Health card added to /ui dashboard — shows avg/min/max price_index, avg supply/demand, station count, and above/at/below equilibrium counts; rendered via renderEconomySummary() called from setKpis on every snapshot refresh; 125 tests green (1 transient Windows file-lock flake in shadow stability is pre-existing and unrelated)
+- Next chunk: add a price sparkline to the Economy Health card so operators can see price_index trend over time, using the same push/drawCharts pattern as the pirate strength sparkline
 
 ### Goal
 Real economy with producers at stations, variable prices due to events, distance from materials, or station needs.
