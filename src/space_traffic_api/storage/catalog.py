@@ -15,20 +15,44 @@ class CatalogRepository:
         for station in stations:
             row = dict(station)
             row["allowed_size_classes"] = json.dumps(station.get("allowed_size_classes", []))
+            row["economy_profile"] = json.dumps(station.get("economy_profile", {}))
+            row["economy_state"] = json.dumps(station.get("economy_state", {}))
             rows.append(row)
 
         with self._context.lock:
             self._context.conn.executemany(
                 """
-                INSERT INTO stations (id, name, body_name, body_type, parent_body, cargo_type, allowed_size_classes)
-                VALUES (:id, :name, :body_name, :body_type, :parent_body, :cargo_type, :allowed_size_classes)
+                INSERT INTO stations (
+                    id,
+                    name,
+                    body_name,
+                    body_type,
+                    parent_body,
+                    cargo_type,
+                    allowed_size_classes,
+                    economy_profile,
+                    economy_state
+                )
+                VALUES (
+                    :id,
+                    :name,
+                    :body_name,
+                    :body_type,
+                    :parent_body,
+                    :cargo_type,
+                    :allowed_size_classes,
+                    :economy_profile,
+                    :economy_state
+                )
                 ON CONFLICT(id) DO UPDATE SET
                     name=excluded.name,
                     body_name=excluded.body_name,
                     body_type=excluded.body_type,
                     parent_body=excluded.parent_body,
                     cargo_type=excluded.cargo_type,
-                    allowed_size_classes=excluded.allowed_size_classes
+                    allowed_size_classes=excluded.allowed_size_classes,
+                    economy_profile=excluded.economy_profile,
+                    economy_state=excluded.economy_state
                 """,
                 rows,
             )
@@ -109,7 +133,42 @@ class CatalogRepository:
                 row["allowed_size_classes"] = json.loads(raw) if raw else []
             except json.JSONDecodeError:
                 row["allowed_size_classes"] = []
+
+            raw_profile = row.get("economy_profile")
+            try:
+                row["economy_profile"] = json.loads(raw_profile) if raw_profile else {}
+            except json.JSONDecodeError:
+                row["economy_profile"] = {}
+
+            raw_state = row.get("economy_state")
+            try:
+                row["economy_state"] = json.loads(raw_state) if raw_state else {}
+            except json.JSONDecodeError:
+                row["economy_state"] = {}
+
+            row["economy_derived"] = self._derive_station_economy(row)
         return records, total_count
+
+    def _derive_station_economy(self, station: dict[str, Any]) -> dict[str, float]:
+        profile = station.get("economy_profile") if isinstance(station.get("economy_profile"), dict) else {}
+        state = station.get("economy_state") if isinstance(station.get("economy_state"), dict) else {}
+
+        supply = float(state.get("supply_index", 1.0) or 1.0)
+        demand = float(state.get("demand_index", 1.0) or 1.0)
+        price = float(state.get("price_index", 1.0) or 1.0)
+        fuel = float(state.get("fuel_price_index", 1.0) or 1.0)
+        material_demand = float(profile.get("manufacturing_material_demand", 0.5) or 0.5)
+
+        safe_supply = max(0.01, supply)
+        local_value_score = (demand / safe_supply) * price
+        scarcity_index = demand / safe_supply
+        fuel_pressure_score = fuel * (1.0 + (material_demand * 0.15))
+
+        return {
+            "local_value_score": round(max(0.1, min(10.0, local_value_score)), 3),
+            "scarcity_index": round(max(0.1, min(10.0, scarcity_index)), 3),
+            "fuel_pressure_score": round(max(0.1, min(10.0, fuel_pressure_score)), 3),
+        }
 
     def list_ships(
         self,

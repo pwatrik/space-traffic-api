@@ -29,7 +29,9 @@ class SQLiteStore:
                     body_type TEXT NOT NULL,
                     parent_body TEXT NOT NULL,
                     cargo_type TEXT NOT NULL DEFAULT '',
-                    allowed_size_classes TEXT NOT NULL DEFAULT '[]'
+                    allowed_size_classes TEXT NOT NULL DEFAULT '[]',
+                    economy_profile TEXT NOT NULL DEFAULT '{}',
+                    economy_state TEXT NOT NULL DEFAULT '{}'
                 );
 
                 CREATE TABLE IF NOT EXISTS ships (
@@ -102,6 +104,8 @@ class SQLiteStore:
             # Backfill columns for pre-migration databases where tables already existed.
             self._ensure_column("stations", "allowed_size_classes", "TEXT NOT NULL DEFAULT '[]'")
             self._ensure_column("stations", "cargo_type", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column("stations", "economy_profile", "TEXT NOT NULL DEFAULT '{}'")
+            self._ensure_column("stations", "economy_state", "TEXT NOT NULL DEFAULT '{}'")
             self._ensure_column("ships", "size_class", "TEXT NOT NULL DEFAULT 'medium'")
             self._ensure_column("ships", "cargo", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column("ships", "crew", "INTEGER NOT NULL DEFAULT 0")

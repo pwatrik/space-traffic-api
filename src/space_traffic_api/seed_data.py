@@ -483,6 +483,51 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
     def _station_cargo() -> str:
         return rng.choice(cargo_types)
 
+    def _station_economy_profile(body_type: str) -> dict[str, float | str]:
+        # These are placeholder station attributes for Milestone 2 economy work.
+        baseline = {
+            "planet": {
+                "temperature_band": "temperate",
+                "food_production": 0.75,
+                "oxygen": 0.80,
+                "water": 0.70,
+                "manufacturing_material_demand": 0.65,
+            },
+            "moon": {
+                "temperature_band": "cold",
+                "food_production": 0.35,
+                "oxygen": 0.45,
+                "water": 0.40,
+                "manufacturing_material_demand": 0.75,
+            },
+            "asteroid": {
+                "temperature_band": "cold",
+                "food_production": 0.15,
+                "oxygen": 0.25,
+                "water": 0.30,
+                "manufacturing_material_demand": 0.85,
+            },
+        }
+        row = dict(baseline.get(body_type, baseline["planet"]))
+        jitter = lambda: round(min(1.0, max(0.0, rng.uniform(-0.05, 0.05) + 0.5)) - 0.5, 3)
+        row["food_production"] = round(max(0.0, min(1.0, float(row["food_production"]) + jitter())), 3)
+        row["oxygen"] = round(max(0.0, min(1.0, float(row["oxygen"]) + jitter())), 3)
+        row["water"] = round(max(0.0, min(1.0, float(row["water"]) + jitter())), 3)
+        row["manufacturing_material_demand"] = round(
+            max(0.0, min(1.0, float(row["manufacturing_material_demand"]) + jitter())),
+            3,
+        )
+        return row
+
+    def _station_economy_state(cargo_type: str) -> dict[str, float | str]:
+        return {
+            "primary_good": cargo_type,
+            "supply_index": round(rng.uniform(0.7, 1.3), 3),
+            "demand_index": round(rng.uniform(0.7, 1.3), 3),
+            "price_index": round(rng.uniform(0.85, 1.15), 3),
+            "fuel_price_index": round(rng.uniform(0.9, 1.2), 3),
+        }
+
     def _next_station_name(body: str, role_labels: list[str], fallback: str) -> str:
         style = _style_counter[0] % 3
         _style_counter[0] += 1
@@ -510,6 +555,7 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
         starbases = _station_count(1, 2) if _is_large_planetoid(planet) else 1
         for idx in range(1, starbases + 1):
             sid = f"{template['id_prefix']}-{base_token}" if idx == 1 else f"{template['id_prefix']}-{base_token}-SB{idx}"
+            cargo_type = _station_cargo()
             stations.append(
                 {
                     "id": sid,
@@ -521,14 +567,17 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
                     "body_name": planet,
                     "body_type": "planet",
                     "parent_body": planet,
-                    "cargo_type": _station_cargo(),
+                    "cargo_type": cargo_type,
                     "allowed_size_classes": template["allowed_size_classes"],
+                    "economy_profile": _station_economy_profile("planet"),
+                    "economy_state": _station_economy_state(cargo_type),
                 }
             )
 
         orbitals = _station_count(1, 3) if _is_large_planetoid(planet) else 1
         for idx in range(1, orbitals + 1):
             sid = f"{template['id_prefix']}-{base_token}-ORB{idx}"
+            cargo_type = _station_cargo()
             stations.append(
                 {
                     "id": sid,
@@ -540,8 +589,10 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
                     "body_name": planet,
                     "body_type": "planet",
                     "parent_body": planet,
-                    "cargo_type": _station_cargo(),
+                    "cargo_type": cargo_type,
                     "allowed_size_classes": template["allowed_size_classes"],
+                    "economy_profile": _station_economy_profile("planet"),
+                    "economy_state": _station_economy_state(cargo_type),
                 }
             )
 
@@ -554,6 +605,7 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
         orbitals = _station_count(1, 3) if _is_large_planetoid(moon_name) else 1
         for idx in range(1, orbitals + 1):
             sid = f"{template['id_prefix']}-{base_token}" if idx == 1 else f"{template['id_prefix']}-{base_token}-ORB{idx}"
+            cargo_type = _station_cargo()
             stations.append(
                 {
                     "id": sid,
@@ -565,8 +617,10 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
                     "body_name": moon_name,
                     "body_type": "moon",
                     "parent_body": parent,
-                    "cargo_type": _station_cargo(),
+                    "cargo_type": cargo_type,
                     "allowed_size_classes": template["allowed_size_classes"],
+                    "economy_profile": _station_economy_profile("moon"),
+                    "economy_state": _station_economy_state(cargo_type),
                 }
             )
 
@@ -574,6 +628,7 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
             starbases = _station_count(1, 2)
             for idx in range(1, starbases + 1):
                 sid = f"{template['id_prefix']}-{base_token}-SB{idx}"
+                cargo_type = _station_cargo()
                 stations.append(
                     {
                         "id": sid,
@@ -585,14 +640,17 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
                         "body_name": moon_name,
                         "body_type": "moon",
                         "parent_body": parent,
-                        "cargo_type": _station_cargo(),
+                        "cargo_type": cargo_type,
                         "allowed_size_classes": template["allowed_size_classes"],
+                        "economy_profile": _station_economy_profile("moon"),
+                        "economy_state": _station_economy_state(cargo_type),
                     }
                 )
 
     for asteroid in catalog["celestial"]["asteroids"]:
         template = templates["asteroid"]
         sid = f"{template['id_prefix']}-{_sanitize_station_token(asteroid)}"
+        cargo_type = _station_cargo()
         stations.append(
             {
                 "id": sid,
@@ -604,8 +662,10 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
                 "body_name": asteroid,
                 "body_type": "asteroid",
                 "parent_body": template["parent_body"] or "Asteroid Belt",
-                "cargo_type": _station_cargo(),
+                "cargo_type": cargo_type,
                 "allowed_size_classes": template["allowed_size_classes"],
+                "economy_profile": _station_economy_profile("asteroid"),
+                "economy_state": _station_economy_state(cargo_type),
             }
         )
 
