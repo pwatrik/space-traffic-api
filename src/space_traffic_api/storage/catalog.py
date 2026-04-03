@@ -169,7 +169,7 @@ class CatalogRepository:
         fuel = float(state.get("fuel_price_index", 1.0) or 1.0)
         material_demand = float(profile.get("manufacturing_material_demand", 0.5) or 0.5)
 
-        distance_rank = float(profile.get("distance_rank", 5) or 5)
+        distance_rank = max(1.0, min(10.0, float(profile.get("distance_rank", 5) or 5)))
         normalized_dist = (distance_rank - 1.0) / 9.0  # [0.0 Mercury … 1.0 Pluto]
 
         safe_supply = max(0.01, supply)

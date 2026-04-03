@@ -526,7 +526,7 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
         )
         row["producer_rate"] = round(max(0.01, min(0.25, float(row["producer_rate"]) + jitter() * 0.04)), 4)
         row["consumer_rate"] = round(max(0.01, min(0.25, float(row["consumer_rate"]) + jitter() * 0.04)), 4)
-        row["distance_rank"] = max(1, int(distance_rank))
+        row["distance_rank"] = min(10, max(1, int(distance_rank)))
         return row
 
     def _station_economy_state(cargo_type: str) -> dict[str, float | str]:
