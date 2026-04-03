@@ -135,6 +135,7 @@ const stationsQuery = {
 
 const departuresByMinute = new Map();
 const pirateStrengthHistory = [];
+const priceIndexHistory = [];
 const operatorActionHistory = [];
 
 const PIRATE_PRESETS = {
@@ -244,6 +245,13 @@ function pushPirateStrength(strength) {
   }
 }
 
+function pushPriceIndex(price) {
+  priceIndexHistory.push({ t: getSimulationNowMs(), v: Number(price) || 1.0 });
+  if (priceIndexHistory.length > 90) {
+    priceIndexHistory.splice(0, priceIndexHistory.length - 90);
+  }
+}
+
 function drawSparkline(canvasId, values, color, fillColor) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) {
@@ -294,9 +302,11 @@ function drawCharts() {
     .slice(-30)
     .map((entry) => entry[1]);
   const pirateValues = pirateStrengthHistory.slice(-40).map((entry) => entry.v);
+  const priceValues = priceIndexHistory.slice(-40).map((entry) => entry.v);
 
   drawSparkline("departures-chart", depValues, "#36d6a5", "rgba(54, 214, 165, 0.18)");
   drawSparkline("pirate-chart", pirateValues, "#ffd166", "rgba(255, 209, 102, 0.18)");
+  drawSparkline("economy-price-chart", priceValues, "#a78bfa", "rgba(167, 139, 250, 0.18)");
 }
 
 function renderControlSummary(config, faults) {
@@ -409,6 +419,7 @@ function setKpis(stats) {
   document.getElementById("scenario-meta").textContent = text;
 
   pushPirateStrength(stats.pirate_strength || 0);
+  pushPriceIndex((stats.economy_summary && stats.economy_summary.price_index_avg) || 1.0);
   drawCharts();
   renderEconomySummary(stats.economy_summary || null);
 }
