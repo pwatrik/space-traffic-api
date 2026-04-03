@@ -43,6 +43,9 @@ class RuntimeState:
             "economy_preference_weight": config.economy_preference_weight,
             "economy_drift_magnitude": config.economy_drift_magnitude,
             "economy_departure_impact_magnitude": config.economy_departure_impact_magnitude,
+            "orbital_distance_model_enabled": config.orbital_distance_model_enabled,
+            "orbital_distance_multiplier_min": config.orbital_distance_multiplier_min,
+            "orbital_distance_multiplier_max": config.orbital_distance_multiplier_max,
             "simulation_now": _parse_deterministic_start(config.deterministic_start_time).isoformat() if config.deterministic_mode else datetime.now(UTC).isoformat(),
             "active_scenario": None,
             "active_faults": {},
@@ -120,6 +123,9 @@ class RuntimeState:
                         "economy_preference_weight",
                         "economy_drift_magnitude",
                         "economy_departure_impact_magnitude",
+                        "orbital_distance_model_enabled",
+                        "orbital_distance_multiplier_min",
+                        "orbital_distance_multiplier_max",
                         "pirate_spawn_probability_per_day",
                         "pirate_strength_start",
                         "pirate_strength_end_threshold",
@@ -167,6 +173,35 @@ class RuntimeState:
             except (TypeError, ValueError):
                 departure_mag = 0.012
             self._state["economy_departure_impact_magnitude"] = max(0.001, min(0.2, departure_mag))
+
+            orbital_enabled = self._state.get("orbital_distance_model_enabled", False)
+            if isinstance(orbital_enabled, bool):
+                self._state["orbital_distance_model_enabled"] = orbital_enabled
+            elif isinstance(orbital_enabled, str):
+                self._state["orbital_distance_model_enabled"] = orbital_enabled.strip().lower() in {
+                    "1",
+                    "true",
+                    "yes",
+                    "on",
+                }
+            else:
+                self._state["orbital_distance_model_enabled"] = bool(orbital_enabled)
+
+            try:
+                orbital_min = float(self._state.get("orbital_distance_multiplier_min", 0.7))
+            except (TypeError, ValueError):
+                orbital_min = 0.7
+            try:
+                orbital_max = float(self._state.get("orbital_distance_multiplier_max", 1.3))
+            except (TypeError, ValueError):
+                orbital_max = 1.3
+
+            orbital_min = max(0.5, min(1.0, orbital_min))
+            orbital_max = max(1.0, min(1.5, orbital_max))
+            if orbital_max < orbital_min:
+                orbital_max = orbital_min
+            self._state["orbital_distance_multiplier_min"] = orbital_min
+            self._state["orbital_distance_multiplier_max"] = orbital_max
 
             def _to_float(value: Any) -> float | None:
                 try:
