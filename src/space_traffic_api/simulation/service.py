@@ -82,6 +82,9 @@ class SimulationService:
     def estimate_arrival(self, departure_time: datetime, source: str, destination: str) -> datetime:
         return self._generator.estimate_arrival(departure_time, source, destination)
 
+    def orbital_state_snapshot(self) -> dict[str, dict[str, Any]]:
+        return self._generator.orbital_state_snapshot()
+
     def list_control_events(self, since_id: int | None, limit: int, order: str) -> list[dict[str, Any]]:
         return self._runtime.list_control_events(since_id=since_id, limit=limit, order=order)
 

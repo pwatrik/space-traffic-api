@@ -5,16 +5,16 @@ import random
 import sqlite3
 import threading
 import time
-import math
 from collections import deque
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from ..seed_data import load_naming_config, station_distance_groups
+from ..seed_data import load_naming_config, orbital_anchor_body_for_station, station_distance_groups
 from ..store import SQLiteStore
 from .engine.departure_builder import create_departure_event
 from .engine.fault_injector import apply_faults
+from .engine.orbital_state import OrbitalBodyState, initialize_orbital_body_state
 from .engine.routing import pick_destination
 from .engine.ship_selector import select_ship
 from .engine.simulation_engine import SimulationEngine
@@ -47,7 +47,13 @@ class DepartureGenerator(threading.Thread):
         self._distance_groups = station_distance_groups(stations)
         self._ship_lookup = {s["id"]: s for s in ships}
         self._station_lookup = {s["id"]: s for s in stations}
+        self._station_orbital_anchor = {
+            str(station["id"]): orbital_anchor_body_for_station(station)
+            for station in stations
+            if station.get("id")
+        }
         self._catalog = catalog or {}
+        self._orbital_state: dict[str, OrbitalBodyState] = {}
         self._lifecycle = self._catalog.get("lifecycle", {})
         self._ship_generation = self._catalog.get("ship_generation", {})
         defaults = self._ship_generation.get("defaults") or {}
@@ -190,6 +196,7 @@ class DepartureGenerator(threading.Thread):
         if self._rng is None:
             self._rng = random.Random(seed if det_mode else None)
             self._set_sim_time(state)
+            self._initialize_orbital_state(state)
             return
 
         reset_marker = state.get("last_reset_at")
@@ -198,9 +205,21 @@ class DepartureGenerator(threading.Thread):
             self._last_reset_marker = reset_marker
             self._rng = random.Random(seed if det_mode else None)
             self._set_sim_time(state)
+            self._initialize_orbital_state(state)
             self._event_counter = 0
             self._last_event_uid = ""
             self._startup_merchants_launched = False
+
+    def _initialize_orbital_state(self, state: dict[str, Any]) -> None:
+        seed = int(state.get("deterministic_seed", 424242) or 424242)
+        self._orbital_state = initialize_orbital_body_state(self._catalog, seed)
+
+    def orbital_state_snapshot(self) -> dict[str, dict[str, Any]]:
+        self._ensure_rng(self._runtime.snapshot())
+        return {
+            body_id: body_state.snapshot()
+            for body_id, body_state in sorted(self._orbital_state.items())
+        }
 
     def _set_sim_time(self, state: dict[str, Any]) -> None:
         if state.get("deterministic_mode"):
@@ -761,53 +780,9 @@ class DepartureGenerator(threading.Thread):
 
         src_group = self._distance_groups.get(source, 5)
         dst_group = self._distance_groups.get(destination, 5)
-        base_hops = abs(src_group - dst_group)
-        hops = base_hops * self._orbital_distance_multiplier(departure_time, source, destination)
+        hops = abs(src_group - dst_group)
         hours = (6 + (hops * 8) + self._rng.uniform(0.5, 12.0)) / self._ship_speed_multiplier
         return departure_time + timedelta(hours=hours)
-
-    def _orbital_distance_multiplier(self, departure_time: datetime, source: str, destination: str) -> float:
-        runtime_snap = self._runtime.snapshot()
-        if not runtime_snap.get("orbital_distance_model_enabled"):
-            return 1.0
-
-        try:
-            min_multiplier = float(runtime_snap.get("orbital_distance_multiplier_min", 0.7) or 0.7)
-        except (TypeError, ValueError):
-            min_multiplier = 0.7
-        try:
-            max_multiplier = float(runtime_snap.get("orbital_distance_multiplier_max", 1.3) or 1.3)
-        except (TypeError, ValueError):
-            max_multiplier = 1.3
-
-        min_multiplier = max(0.5, min(1.0, min_multiplier))
-        max_multiplier = max(1.0, min(1.5, max_multiplier))
-        if max_multiplier < min_multiplier:
-            max_multiplier = min_multiplier
-        if max_multiplier == min_multiplier:
-            return min_multiplier
-
-        src_rank = self._station_distance_rank(source)
-        dst_rank = self._station_distance_rank(destination)
-        low = min(src_rank, dst_rank)
-        high = max(src_rank, dst_rank)
-        rank_gap = max(0.0, high - low)
-
-        departure_utc = departure_time.astimezone(UTC) if departure_time.tzinfo else departure_time.replace(tzinfo=UTC)
-        day_index = departure_utc.timestamp() / 86400.0
-        period_days = 40.0 + (rank_gap * 4.0)
-        phase_offset = (low * 0.61) + (high * 1.37)
-        angle = ((day_index / period_days) * (2.0 * math.pi)) + phase_offset
-        normalized = (math.sin(angle) + 1.0) / 2.0
-        return min_multiplier + ((max_multiplier - min_multiplier) * normalized)
-
-    def _station_distance_rank(self, station_id: str) -> float:
-        station = self._station_lookup.get(station_id, {})
-        profile = station.get("economy_profile") if isinstance(station.get("economy_profile"), dict) else {}
-        try:
-            return float(profile.get("distance_rank", self._distance_groups.get(station_id, 5)) or 5)
-        except (TypeError, ValueError):
-            return float(self._distance_groups.get(station_id, 5))
 
     def _apply_faults(self, event: dict[str, Any], state: dict[str, Any]) -> None:
         apply_faults(
