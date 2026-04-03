@@ -48,6 +48,22 @@ docker run --rm -p 8000:8000 space-traffic-api
 Workflow file: `.github/workflows/ci.yml`
 Release workflow: `.github/workflows/release.yml`
 
+## API Compatibility + Deprecation Policy
+
+This project uses a stability-first policy for the current API surface.
+
+- Additive-first changes: new fields and new endpoints are preferred over changing existing response shapes.
+- Existing response keys on stable endpoints should not be removed or renamed in a patch release.
+- Behavior changes that impact deterministic output require explicit release notes and golden snapshot updates in the same PR.
+- Breaking changes must be called out in release notes and delayed until the next minor or major tagged release.
+
+Deprecation process:
+
+1. Mark target behavior/field as deprecated in README and OpenAPI description text.
+2. Keep backward-compatible behavior for at least one tagged release after deprecation notice.
+3. Add/adjust contract tests to ensure both old and replacement paths are validated during the deprecation window.
+4. Remove deprecated behavior only in a planned versioned release with migration notes.
+
 ## Release Smoke Gate
 
 - Script: `scripts/release_smoke_gate.py`
@@ -153,6 +169,26 @@ Expected CI result:
   - `README.release.md`
 
 ### Failure Triage
+
+#### Quick Triage Table
+
+| Signal | Likely Cause | First Action |
+| --- | --- | --- |
+| Smoke gate fails in `fast suite` | Regression in core behavior | Re-run printed pytest command, fix regression before any snapshot updates |
+| Smoke gate fails in `golden snapshot` | Deterministic output drift | Confirm seed/preset/rate; update golden only if behavior change is intentional |
+| Smoke gate fails in `api contract` | Response shape drift | Diff endpoint payload keys and update implementation or contract test intentionally |
+| Smoke gate fails in `shadow core` | Parity or stability regression | Re-run shadow test node IDs locally and inspect recent simulation/runtime changes |
+| Smoke gate fails in `runtime_metrics` | Generator startup or control backlog issue | Check `/healthz` runtime metrics and inspect generator/control subscriber behavior |
+
+#### Common Failure Signatures
+
+| Signature | Interpretation | Action |
+| --- | --- | --- |
+| `pytest exited with code 1` | One of the gate test groups failed | Run that exact group directly and fix root cause |
+| `tick_count must be > 0` | Generator did not advance | Verify generator startup and deterministic run setup |
+| `control_event_backlog_total too high` | Control event queues are not draining | Check subscriber cleanup and long-lived stream consumers |
+| `control_event_backlog_max too high` | At least one subscriber backlog spiked | Inspect per-subscriber behavior and stream disconnect handling |
+| `expected /healthz=200` | Health endpoint unavailable during gate | Check app bootstrap and route registration state |
 
 - Smoke gate fails in fast/golden/shadow checks:
   - run the exact failing pytest command printed by `scripts/release_smoke_gate.py`
