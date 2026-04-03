@@ -77,7 +77,9 @@ Status: In progress
 - Completed chunk 7 tests: distance_rank presence + solar position correctness, moon rank inheritance, fuel pressure higher for distant stations, merchant penalizes high-fuel-cost routes
 - Completed chunk 8: price_index in advance_station_economy now drifts toward demand/supply equilibrium each tick (target = demand/supply, delta = 5% of gap × day_factor × magnitude), clamped [0.5, 3.0]; all 120 tests green
 - Completed chunk 8 tests: price rises when demand > supply, price falls when supply > demand, stable at equilibrium, deterministic with seeded RNG
-- Next chunk: add price_index to local_value_score derivation so merchants explicitly factor current station prices into routing decisions
+- Completed chunk 9: confirmed price_index flows end-to-end through economy derivation (local_value_score = demand/supply × price) into merchant routing; routing fallback also reads price_index directly from economy_state; 122 tests green
+- Completed chunk 9 tests: local_value_score scales with price_index (higher price → higher score), merchant prefers higher-price-index destination when routed via raw economy_state fallback
+- Next chunk: apply a small price_index ease to destination station on departure so arriving goods directly lower destination price pressure, completing the tight supply-demand-price feedback loop
 
 ### Goal
 Real economy with producers at stations, variable prices due to events, distance from materials, or station needs.

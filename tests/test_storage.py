@@ -42,6 +42,41 @@ def test_enforce_db_size_limit_culls_old_departures():
             store.close()
 
 
+def test_price_index_raises_local_value_score():
+    """Seeding two identical stations except for price_index should yield a higher
+    local_value_score for the station with the higher price_index."""
+    with TemporaryDirectory() as tmp:
+        db_path = os.path.join(tmp, "test.db")
+        store = SQLiteStore(db_path)
+        store.init_schema()
+
+        base = {
+            "body_name": "Test", "body_type": "planet", "parent_body": "Test",
+            "cargo_type": "ore", "allowed_size_classes": ["medium"],
+            "economy_profile": {"producer_rate": 0.06, "consumer_rate": 0.06,
+                                "manufacturing_material_demand": 0.5, "distance_rank": 3},
+        }
+        stations = [
+            {**base, "id": "STN-CHEAP", "name": "Cheap",
+             "economy_state": {"primary_good": "ore", "supply_index": 1.0, "demand_index": 1.0,
+                               "price_index": 0.7, "fuel_price_index": 1.0}},
+            {**base, "id": "STN-EXPENSIVE", "name": "Expensive",
+             "economy_state": {"primary_good": "ore", "supply_index": 1.0, "demand_index": 1.0,
+                               "price_index": 2.0, "fuel_price_index": 1.0}},
+        ]
+        store.seed_stations(stations)
+        try:
+            rows, _ = store.list_stations(limit=10)
+            by_id = {row["id"]: row for row in rows}
+            score_cheap = float(by_id["STN-CHEAP"]["economy_derived"]["local_value_score"])
+            score_expensive = float(by_id["STN-EXPENSIVE"]["economy_derived"]["local_value_score"])
+            assert score_expensive > score_cheap, (
+                f"Expected STN-EXPENSIVE ({score_expensive}) > STN-CHEAP ({score_cheap})"
+            )
+        finally:
+            store.close()
+
+
 def test_advance_station_economy_updates_supply_and_demand_within_bounds():
     with TemporaryDirectory() as tmp:
         db_path = os.path.join(tmp, "test.db")
