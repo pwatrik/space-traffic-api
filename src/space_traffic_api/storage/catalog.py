@@ -11,6 +11,15 @@ class CatalogRepository:
     def __init__(self, context: StorageContext):
         self._context = context
 
+    def _parse_json_column(self, raw_value: Any) -> dict[str, Any]:
+        if not raw_value:
+            return {}
+        try:
+            parsed = json.loads(raw_value)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+
     def seed_stations(self, stations: list[dict[str, Any]]) -> None:
         rows = []
         for station in stations:
@@ -255,15 +264,8 @@ class CatalogRepository:
             for row in rows:
                 station_id = str(row["id"])
 
-                try:
-                    profile = json.loads(row["economy_profile"]) if row["economy_profile"] else {}
-                except json.JSONDecodeError:
-                    profile = {}
-
-                try:
-                    state = json.loads(row["economy_state"]) if row["economy_state"] else {}
-                except json.JSONDecodeError:
-                    state = {}
+                profile = self._parse_json_column(row["economy_profile"])
+                state = self._parse_json_column(row["economy_state"])
 
                 producer_rate = float(profile.get("producer_rate", 0.06) or 0.06)
                 consumer_rate = float(profile.get("consumer_rate", 0.06) or 0.06)
@@ -334,10 +336,7 @@ class CatalogRepository:
 
             src_row = by_id.get(source_station_id)
             if src_row:
-                try:
-                    src_state = json.loads(src_row["economy_state"]) if src_row["economy_state"] else {}
-                except json.JSONDecodeError:
-                    src_state = {}
+                src_state = self._parse_json_column(src_row["economy_state"])
 
                 src_supply = float(src_state.get("supply_index", 1.0) or 1.0)
                 supply_drop = magnitude * (0.8 + (rng.random() * 0.4))
@@ -346,10 +345,7 @@ class CatalogRepository:
 
             dst_row = by_id.get(destination_station_id)
             if dst_row:
-                try:
-                    dst_state = json.loads(dst_row["economy_state"]) if dst_row["economy_state"] else {}
-                except json.JSONDecodeError:
-                    dst_state = {}
+                dst_state = self._parse_json_column(dst_row["economy_state"])
 
                 dst_demand = float(dst_state.get("demand_index", 1.0) or 1.0)
                 demand_relief = magnitude * (0.6 + (rng.random() * 0.4))
@@ -383,10 +379,7 @@ class CatalogRepository:
         supplies: list[float] = []
         demands: list[float] = []
         for row in rows:
-            try:
-                state = json.loads(row["economy_state"]) if row["economy_state"] else {}
-            except json.JSONDecodeError:
-                state = {}
+            state = self._parse_json_column(row["economy_state"])
             prices.append(float(state.get("price_index", 1.0) or 1.0))
             supplies.append(float(state.get("supply_index", 1.0) or 1.0))
             demands.append(float(state.get("demand_index", 1.0) or 1.0))
