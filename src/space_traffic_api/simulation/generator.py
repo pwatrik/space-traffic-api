@@ -691,7 +691,7 @@ class DepartureGenerator(threading.Thread):
             rng=self._rng,
             station_accepts_size_class=self._station_accepts_size_class,
             economy_preference_weight=float(
-                runtime_snap.get("economy_preference_weight") if runtime_snap.get("economy_preference_weight") is not None else 0.15
+                _epw if (_epw := runtime_snap.get("economy_preference_weight")) is not None else 0.15
             ),
         )
 
