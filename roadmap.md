@@ -84,7 +84,8 @@ Status: In progress
 - Completed chunk 11: economy health observable via GET /stats — added get_economy_summary() to CatalogRepository and SQLiteStore; /stats now includes economy_summary with station_count, price_index_{avg,min,max}, supply_index_avg, demand_index_avg, stations_above/below_equilibrium; contract test updated; 125 tests green
 - Completed chunk 11 tests: /stats includes economy_summary with correct keys and valid bounds
 - Completed chunk 12: Economy Health card added to /ui dashboard — shows avg/min/max price_index, avg supply/demand, station count, and above/at/below equilibrium counts; rendered via renderEconomySummary() called from setKpis on every snapshot refresh; 125 tests green (1 transient Windows file-lock flake in shadow stability is pre-existing and unrelated)
-- Next chunk: wire the already-implemented Avg Price Index sparkline into the Economy Health card (or otherwise consolidate its placement) so operators can see the price_index trend in that card specifically, reusing the existing history/canvas/drawing path
+- Completed chunk 13: Avg Price Index sparkline wired into live dashboard trend charts using existing history/canvas renderer path; 125 tests green
+- Post-chunk refactor pass: extracted shared JSON parsing helper in catalog repository to remove repeated decode fallback blocks with no behavior change
 
 ### Goal
 Real economy with producers at stations, variable prices due to events, distance from materials, or station needs.
@@ -102,9 +103,50 @@ Real economy with producers at stations, variable prices due to events, distance
 - Tuning controls for adjusting all aspects of economy and behavior (add to api later)
 
 ## Milestone 2.5 Orbital Locations
+Estimated effort: 3-5 sessions
+Status: Planned (default-off experimental slice)
 
 ### Goal
-Rework of planet/body distances to roughly simulate orbital positions, changing over simulated time.
+Introduce a rough orbital-position distance model that changes over simulated time and affects distance only at departure-time arrival estimation.
+
+### Scope Boundaries (Locked)
+- Include rough, deterministic orbital movement approximation (not astronomy-grade).
+- Include departure-time distance sampling only.
+- Exclude in-transit distance recomputation.
+- Exclude rerouting due to mid-flight orbital motion.
+- Exclude NASA-accurate ephemerides and trajectory complexity.
+
+### Deliverables
+1. Deterministic rough orbital distance modifier
+- Add a simple periodic movement model tied to simulated time and station/body metadata.
+- Produce a bounded distance multiplier applied on top of current baseline distance estimate.
+
+2. Departure-time-only integration
+- Apply the orbital multiplier only when estimating arrival at departure creation time.
+- Keep transit fixed to that sampled distance/time for the whole trip.
+
+3. Runtime control and safety
+- Add default-off config/runtime knobs with validation and clamping.
+- Keep current behavior unchanged when the feature is disabled.
+
+4. Verification and rollout gate
+- Add unit/integration tests for bounds and determinism.
+- Add regression test proving no in-flight distance changes after departure.
+- Run A/B comparison (feature off vs on) and record transit/economy behavior deltas.
+
+### Definition of Done
+- Feature is off by default and can be enabled via existing config/control path.
+- For fixed seed + config + simulated start time, results remain deterministic.
+- Arrival estimation uses departure-time sampled distance only (no mid-flight updates).
+- Golden/shadow test impact is understood and either unchanged or intentionally recaptured.
+- Observed behavior shift is meaningful but controlled (no extreme routing instability).
+
+### Suggested Session Breakdown
+1. Session 1: finalize model shape and constraints; add config/runtime knobs (default off).
+2. Session 2: integrate departure-time orbital multiplier into arrival estimation path.
+3. Session 3: add deterministic/bounds/regression tests; run shadow + golden validation.
+4. Session 4: run A/B analysis and tune multiplier envelope.
+5. Session 5 (buffer): polish docs, roadmap notes, and any golden recapture if needed.
 
 ## Milestone 3: Engine Realism and Determinism Depth
 Estimated effort: 10-14 sessions
@@ -143,10 +185,12 @@ Expose richer simulation capabilities through stable, usable API contracts.
 ## Session Estimate Summary
 - Milestone 1: 4-6 sessions
 - Milestone 2: 8-12 sessions
+- Milestone 2.5: 3-5 sessions
 - Milestone 3: 10-14 sessions
 - Milestone 4: 7-10 sessions
-- Total roadmap estimate: 29-42 sessions
+- Total roadmap estimate: 32-47 sessions
 
 ## Notes
 - Milestones 2 and 3 can partially overlap after Milestone 1 is complete.
+- Milestone 2.5 is intentionally constrained and should complete before broad Milestone 3 engine changes.
 - If throughput is priority, run Milestone 2 scenario work in parallel with Milestone 3 replay/scheduler work.
