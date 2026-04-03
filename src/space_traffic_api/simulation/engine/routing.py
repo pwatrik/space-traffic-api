@@ -15,6 +15,7 @@ def pick_destination(
 	pirate_state: dict[str, Any] | None,
 	rng: random.Random,
 	station_accepts_size_class: Callable[[str, str], bool],
+	economy_preference_weight: float = 0.15,
 ) -> str | None:
 	"""Select a compatible destination station for a ship."""
 
@@ -41,5 +42,31 @@ def pick_destination(
 		preferred = [sid for sid in station_ids if any(key in sid for key in keywords)]
 		if preferred and rng.random() < 0.65:
 			return rng.choice(preferred)
+
+	if str(ship.get("faction") or "") == "merchant" and economy_preference_weight > 0:
+		weight = max(0.0, min(1.0, float(economy_preference_weight)))
+		weighted: list[tuple[str, float]] = []
+		for sid in station_ids:
+			station = station_lookup.get(sid, {})
+			derived = station.get("economy_derived") if isinstance(station.get("economy_derived"), dict) else {}
+			state = station.get("economy_state") if isinstance(station.get("economy_state"), dict) else {}
+			local_value = float(derived.get("local_value_score", 0.0) or 0.0)
+			if local_value <= 0:
+				supply = max(0.01, float(state.get("supply_index", 1.0) or 1.0))
+				demand = float(state.get("demand_index", 1.0) or 1.0)
+				price = float(state.get("price_index", 1.0) or 1.0)
+				local_value = (demand / supply) * price
+			local_value = max(0.1, min(10.0, local_value))
+			station_weight = 1.0 + ((local_value - 1.0) * weight)
+			weighted.append((sid, max(0.001, station_weight)))
+
+		total = sum(w for _, w in weighted)
+		if total > 0:
+			threshold = rng.random() * total
+			running = 0.0
+			for sid, station_weight in weighted:
+				running += station_weight
+				if threshold <= running:
+					return sid
 
 	return rng.choice(station_ids)

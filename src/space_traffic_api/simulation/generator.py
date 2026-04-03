@@ -272,6 +272,7 @@ class DepartureGenerator(threading.Thread):
         )
 
         self._store.advance_station_economy(elapsed_days=elapsed_days, rng=self._rng)
+        self._refresh_station_economy_snapshot()
 
         active_ships = self._store.list_active_ships_for_lifecycle()
         if not active_ships:
@@ -675,7 +676,19 @@ class DepartureGenerator(threading.Thread):
             pirate_state=self._runtime.snapshot().get("pirate_event"),
             rng=self._rng,
             station_accepts_size_class=self._station_accepts_size_class,
+            economy_preference_weight=0.15,
         )
+
+    def _refresh_station_economy_snapshot(self) -> None:
+        rows, _ = self._store.list_stations(limit=5000, order_by="id", order="asc")
+        for row in rows:
+            station_id = str(row.get("id") or "")
+            if not station_id or station_id not in self._station_lookup:
+                continue
+            station = self._station_lookup[station_id]
+            station["economy_profile"] = row.get("economy_profile", {})
+            station["economy_state"] = row.get("economy_state", {})
+            station["economy_derived"] = row.get("economy_derived", {})
 
     def _station_accepts_size_class(self, station_id: str, ship_size_class: str) -> bool:
         station = self._station_lookup.get(station_id)

@@ -69,7 +69,9 @@ Status: In progress
 - Completed chunk 3 tests: supply/demand drift bounds and deterministic repeatability with seeded RNG
 - Completed chunk 4: departure-linked economy impacts (source supply down, destination demand eased) with bounded deterministic adjustments
 - Completed chunk 4 tests: event-impact bounds and deterministic repeatability with seeded RNG
-- Next chunk: begin feeding economy_derived value signals into merchant destination preference with a low-impact weighting
+- Completed chunk 5: merchant destination preference now includes conservative economy_derived value weighting
+- Completed chunk 5 tests: merchant preference behavior, non-merchant neutrality, and deterministic seeded routing
+- Next chunk: add optional config knobs for economy weighting and drift magnitudes to tune behavior safely
 
 ### Goal
 Real economy with producers at stations, variable prices due to events, distance from materials, or station needs.
