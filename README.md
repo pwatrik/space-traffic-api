@@ -70,6 +70,7 @@ Deprecation process:
 - Runs:
   - `pytest -m "not slow" -q`
   - `pytest tests/test_golden_snapshot.py -q`
+  - `pytest tests/test_api_contract.py -q`
   - focused shadow-core checks
   - runtime metrics sanity (`tick_count > 0`, bounded backlog)
 
@@ -84,6 +85,13 @@ Write a machine-readable smoke report artifact:
 ```powershell
 .\.venv\Scripts\python.exe scripts\release_smoke_gate.py --report-out artifacts\smoke_report.json
 ```
+
+Report schema highlights:
+
+- `status`: `pass` or `fail`
+- `checks[]`: each check includes `name`, `category`, `status`, and `details`
+- `runtime_metrics`: included on success
+- `failure`: included on failure with `check`, `category`, and `reason`
 
 ## Determinism Contract + Perf Baseline
 

@@ -7,8 +7,9 @@ runtime-health issues quickly.
 Checks:
 1) Fast suite           : pytest -m "not slow" -q
 2) Golden contract      : tests/test_golden_snapshot.py
-3) Shadow core          : focused stability checks
-4) Runtime metrics      : tick count grows and control-event backlog is bounded
+3) API contract         : tests/test_api_contract.py
+4) Shadow core          : focused stability checks
+5) Runtime metrics      : tick count grows and control-event backlog is bounded
 
 Usage:
     .venv\\Scripts\\python.exe scripts\\release_smoke_gate.py [--report-out PATH]

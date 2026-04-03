@@ -7,7 +7,7 @@
 
 ## Milestone 1: Lightweight Platform Polish (First)
 Estimated effort: 4-6 sessions
-Status: In progress
+Status: Complete
 
 ### Progress
 - Completed: Session 1 (release/version compatibility policy in README)
@@ -15,7 +15,7 @@ Status: In progress
 - Completed: Session 3 (config validation test coverage for invalid combinations and boundary values)
 - Implemented: Session 4 (smoke gate structured pass/fail reason categories)
 - Completed: Session 5 (runbook quick triage table and common failure signatures)
-- Next: Session 6 buffer (cleanup, final polish, and validation run)
+- Completed: Session 6 buffer (cleanup, final polish, and validation run)
 - Verified: clean end-to-end smoke gate run with structured category report artifact
 
 ### Goal
