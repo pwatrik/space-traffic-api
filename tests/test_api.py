@@ -314,3 +314,35 @@ def test_merchant_departure_updates_ship_cargo_from_source_station(monkeypatch):
             app.config["space_store"].close()
 
 
+def test_config_includes_orbital_diagnostics(monkeypatch):
+    with TemporaryDirectory() as tmp:
+        monkeypatch.setenv("SPACE_TRAFFIC_DB_PATH", f"{tmp}/test.db")
+        monkeypatch.setenv("SPACE_TRAFFIC_DISABLE_GENERATOR", "true")
+        monkeypatch.setenv("SPACE_TRAFFIC_DETERMINISTIC_MODE", "true")
+        monkeypatch.setenv("SPACE_TRAFFIC_DETERMINISTIC_SEED", "5150")
+        monkeypatch.setenv("SPACE_TRAFFIC_ORBITAL_DISTANCE_MODEL_ENABLED", "true")
+
+        app = create_app()
+        client = app.test_client()
+        try:
+            response = client.get("/config")
+            assert response.status_code == 200
+            payload = response.get_json()
+            assert "orbital_diagnostics" in payload
+
+            diagnostics = payload["orbital_diagnostics"]
+            assert diagnostics["enabled"] is True
+            assert diagnostics["body_count"] > 0
+            assert diagnostics["station_anchor_count"] >= diagnostics["body_count"]
+            assert "bodies" in diagnostics
+            assert "Earth" in diagnostics["bodies"]
+
+            earth = diagnostics["bodies"]["Earth"]
+            assert earth["body_id"] == "Earth"
+            assert "phase_radians" in earth
+            assert "x" in earth
+            assert "y" in earth
+        finally:
+            app.config["space_store"].close()
+
+

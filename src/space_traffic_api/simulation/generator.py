@@ -222,6 +222,14 @@ class DepartureGenerator(threading.Thread):
             for body_id, body_state in sorted(self._orbital_state.items())
         }
 
+    def orbital_diagnostics_snapshot(self) -> dict[str, Any]:
+        bodies = self.orbital_state_snapshot()
+        return {
+            "body_count": len(bodies),
+            "station_anchor_count": len(self._station_orbital_anchor),
+            "bodies": bodies,
+        }
+
     def _set_sim_time(self, state: dict[str, Any]) -> None:
         if state.get("deterministic_mode"):
             raw = state.get("deterministic_start_time", "2150-01-01T00:00:00Z")
