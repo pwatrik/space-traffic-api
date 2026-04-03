@@ -66,6 +66,7 @@
             <h3>Config + Reset</h3>
             <div class="inline-row">
               <label class="check-label"><input type="checkbox" id="cfg-deterministic"> Deterministic mode</label>
+              <label class="check-label"><input type="checkbox" id="cfg-orbital-model"> Orbital model</label>
               <label>Seed <input id="cfg-seed" type="number" placeholder="1337"></label>
               <label>Time Scale <input id="cfg-time-scale" type="number" min="0.1" step="0.1" value="1.0"></label>
               <button class="btn" id="cfg-save">Apply</button>
@@ -179,6 +180,13 @@
           <article><span>Displayed Bodies</span><strong id="orb-shown-count">-</strong></article>
         </div>
         <p class="meta" id="orb-meta">Orbital diagnostics loading...</p>
+        <div class="orbital-plot-shell">
+          <div class="orbital-plot-head">
+            <h3>Current Solar System State</h3>
+            <span class="meta" id="orb-plot-meta">Refreshing every ~15s</span>
+          </div>
+          <canvas id="orbital-plot" class="orbital-plot-canvas" width="720" height="420"></canvas>
+        </div>
         <table class="mini-table">
           <thead>
             <tr>

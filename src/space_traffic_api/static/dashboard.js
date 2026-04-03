@@ -137,6 +137,10 @@ const departuresByMinute = new Map();
 const pirateStrengthHistory = [];
 const priceIndexHistory = [];
 const operatorActionHistory = [];
+let latestOrbitalDiagnostics = null;
+let lastOrbitalPlotRenderedAt = 0;
+
+const ORBITAL_PLOT_REFRESH_MS = 15000;
 
 const PIRATE_PRESETS = {
   calm: {
@@ -402,6 +406,90 @@ function renderEconomySummary(eco) {
     `Above eq: ${above}  ·  At eq: ${at}  ·  Below eq: ${below}`;
 }
 
+function drawOrbitalPlot(diagnostics, force = false) {
+  const canvas = document.getElementById("orbital-plot");
+  const meta = document.getElementById("orb-plot-meta");
+  if (!canvas || !meta || !diagnostics) {
+    return;
+  }
+
+  const now = Date.now();
+  if (!force && now - lastOrbitalPlotRenderedAt < ORBITAL_PLOT_REFRESH_MS) {
+    return;
+  }
+
+  lastOrbitalPlotRenderedAt = now;
+  latestOrbitalDiagnostics = diagnostics;
+
+  const bodies = diagnostics.bodies ? Object.values(diagnostics.bodies) : [];
+  const ctx = canvas.getContext("2d");
+  const width = canvas.width;
+  const height = canvas.height;
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const maxRadius = Math.max(1, ...bodies.map((row) => Math.hypot(Number(row.x || 0), Number(row.y || 0))));
+  const plotRadius = Math.min(width, height) * 0.38;
+
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "#050f17";
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.strokeStyle = "rgba(140, 179, 207, 0.14)";
+  ctx.lineWidth = 1;
+  for (let ring = 1; ring <= 5; ring += 1) {
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, (plotRadius / 5) * ring, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = "rgba(140, 179, 207, 0.12)";
+  ctx.beginPath();
+  ctx.moveTo(centerX, 16);
+  ctx.lineTo(centerX, height - 16);
+  ctx.moveTo(16, centerY);
+  ctx.lineTo(width - 16, centerY);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.fillStyle = "#ffd166";
+  ctx.arc(centerX, centerY, 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.font = "12px IBM Plex Mono, Consolas, monospace";
+  ctx.fillStyle = "rgba(230, 242, 255, 0.85)";
+  ctx.fillText("Sun", centerX + 12, centerY - 12);
+
+  const sortedBodies = bodies.sort((a, b) => {
+    const rankA = Number(a.distance_rank) || 0;
+    const rankB = Number(b.distance_rank) || 0;
+    if (rankA !== rankB) {
+      return rankA - rankB;
+    }
+    return String(a.body_id || "").localeCompare(String(b.body_id || ""));
+  });
+
+  sortedBodies.forEach((body, index) => {
+    const bodyType = String(body.body_type || "");
+    const rawX = Number(body.x || 0);
+    const rawY = Number(body.y || 0);
+    const scaledX = centerX + (rawX / maxRadius) * plotRadius;
+    const scaledY = centerY + (rawY / maxRadius) * plotRadius;
+    const color = bodyType === "planet" ? "#36d6a5" : "#9dc8ff";
+    const size = bodyType === "planet" ? 5 : 3;
+
+    ctx.beginPath();
+    ctx.fillStyle = color;
+    ctx.arc(scaledX, scaledY, size, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (index < 14) {
+      ctx.fillStyle = "rgba(230, 242, 255, 0.78)";
+      ctx.fillText(String(body.body_id || "?").slice(0, 16), scaledX + 8, scaledY - 6);
+    }
+  });
+
+  meta.textContent = `Last redrawn ${fmtTime(new Date(now))} · ${sortedBodies.length} bodies · refreshes every ~15s`;
+}
+
 function renderOrbitalDiagnostics(config) {
   const diagnostics = config && config.orbital_diagnostics ? config.orbital_diagnostics : null;
   const enabled = Boolean(diagnostics && diagnostics.enabled);
@@ -427,6 +515,9 @@ function renderOrbitalDiagnostics(config) {
   document.getElementById("orb-meta").textContent = enabled
     ? `Live orbital positions from current simulation tick · showing ${entries.length} closest-by-rank bodies`
     : "Orbital model is disabled. Showing seeded baseline diagnostics.";
+
+  latestOrbitalDiagnostics = diagnostics;
+  drawOrbitalPlot(diagnostics, lastOrbitalPlotRenderedAt === 0);
 
   const tbody = document.getElementById("orbital-body-body");
   tbody.innerHTML = "";
@@ -576,6 +667,10 @@ async function loadControlData() {
   ]);
 
   document.getElementById("cfg-deterministic").checked = Boolean(config.deterministic_mode);
+  document.getElementById("cfg-orbital-model").checked = Boolean(
+    config.orbital_distance_model_enabled ??
+      (config.orbital_diagnostics && config.orbital_diagnostics.enabled)
+  );
   const seed = config.deterministic_seed;
   document.getElementById("cfg-seed").value = seed !== null && seed !== undefined ? String(seed) : "";
   document.getElementById("cfg-time-scale").value = config.simulation_time_scale ?? 1.0;
@@ -628,9 +723,13 @@ function bindControls() {
     await withButtonBusy(cfgSaveButton, "Applying...", async () => {
       try {
         const deterministicMode = document.getElementById("cfg-deterministic").checked;
+        const orbitalModelEnabled = document.getElementById("cfg-orbital-model").checked;
         const seedRaw = document.getElementById("cfg-seed").value.trim();
         const timeScaleRaw = document.getElementById("cfg-time-scale").value.trim();
-        const payload = { deterministic_mode: deterministicMode };
+        const payload = {
+          deterministic_mode: deterministicMode,
+          orbital_distance_model_enabled: orbitalModelEnabled
+        };
         if (seedRaw) {
           payload.deterministic_seed = Number(seedRaw);
         }
@@ -647,7 +746,10 @@ function bindControls() {
         await loadControlData();
         setControlStatus("success", "Runtime configuration updated.");
         appendLog(ctrlLog, "[control] config patched");
-        recordOperatorAction("Config updated", `Deterministic mode, seed, and time scale ${payload.simulation_time_scale ?? "unchanged"}.`);
+        recordOperatorAction(
+          "Config updated",
+          `Deterministic ${deterministicMode ? "on" : "off"}, orbital model ${orbitalModelEnabled ? "on" : "off"}, time scale ${payload.simulation_time_scale ?? "unchanged"}.`
+        );
         showToast("success", "Config Applied", "Runtime configuration updated.");
       } catch (err) {
         setControlStatus("error", `Config update failed: ${err}`);
@@ -1013,6 +1115,12 @@ async function init() {
       appendLog(ctrlLog, `[refresh-error] ${err}`);
     }
   }, 5000);
+
+  setInterval(() => {
+    if (latestOrbitalDiagnostics) {
+      drawOrbitalPlot(latestOrbitalDiagnostics, true);
+    }
+  }, ORBITAL_PLOT_REFRESH_MS);
 }
 
 init();
