@@ -25,6 +25,17 @@ smoke_report.json
 smoke_report.error.txt
 container_sanity_report.json
 container_sanity_report.error.txt
+artifacts/
+benchmark_results.json
+.pytest_last.txt
+pytest_out.txt
+pytest_phase52.txt
+pytest_phase52.err.txt
+full_phase51.txt
+full_suite.txt
+parity_all.txt
+parity_fast.txt
+test_output.txt
 
 # OS/editor noise
 .DS_Store
