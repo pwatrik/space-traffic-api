@@ -11,6 +11,15 @@ class CatalogRepository:
     def __init__(self, context: StorageContext):
         self._context = context
 
+    def _parse_json_column(self, raw_value: Any) -> dict[str, Any]:
+        if not raw_value:
+            return {}
+        try:
+            parsed = json.loads(raw_value)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+
     def seed_stations(self, stations: list[dict[str, Any]]) -> None:
         rows = []
         for station in stations:
@@ -160,10 +169,13 @@ class CatalogRepository:
         fuel = float(state.get("fuel_price_index", 1.0) or 1.0)
         material_demand = float(profile.get("manufacturing_material_demand", 0.5) or 0.5)
 
+        distance_rank = max(1.0, min(10.0, float(profile.get("distance_rank", 5) or 5)))
+        normalized_dist = (distance_rank - 1.0) / 9.0  # [0.0 Mercury … 1.0 Pluto]
+
         safe_supply = max(0.01, supply)
         local_value_score = (demand / safe_supply) * price
         scarcity_index = demand / safe_supply
-        fuel_pressure_score = fuel * (1.0 + (material_demand * 0.15))
+        fuel_pressure_score = fuel * (1.0 + material_demand * 0.15 + normalized_dist * 0.5)
 
         return {
             "local_value_score": round(max(0.1, min(10.0, local_value_score)), 3),
@@ -252,21 +264,15 @@ class CatalogRepository:
             for row in rows:
                 station_id = str(row["id"])
 
-                try:
-                    profile = json.loads(row["economy_profile"]) if row["economy_profile"] else {}
-                except json.JSONDecodeError:
-                    profile = {}
-
-                try:
-                    state = json.loads(row["economy_state"]) if row["economy_state"] else {}
-                except json.JSONDecodeError:
-                    state = {}
+                profile = self._parse_json_column(row["economy_profile"])
+                state = self._parse_json_column(row["economy_state"])
 
                 producer_rate = float(profile.get("producer_rate", 0.06) or 0.06)
                 consumer_rate = float(profile.get("consumer_rate", 0.06) or 0.06)
 
                 supply_index = float(state.get("supply_index", 1.0) or 1.0)
                 demand_index = float(state.get("demand_index", 1.0) or 1.0)
+                price_index = float(state.get("price_index", 1.0) or 1.0)
 
                 noise_supply = (rng.random() - 0.5) * 0.01
                 noise_demand = (rng.random() - 0.5) * 0.01
@@ -277,8 +283,15 @@ class CatalogRepository:
                 demand_delta += scarcity_pressure * 0.02 * day_factor
                 demand_delta += noise_demand
 
+                # Price converges toward demand/supply equilibrium: if demand
+                # exceeds supply price rises slowly and vice-versa.
+                safe_supply = max(0.01, supply_index)
+                target_price = demand_index / safe_supply
+                price_delta = (target_price - price_index) * 0.05 * day_factor * magnitude
+
                 state["supply_index"] = round(max(0.1, min(5.0, supply_index + supply_delta)), 4)
                 state["demand_index"] = round(max(0.1, min(5.0, demand_index + demand_delta)), 4)
+                state["price_index"] = round(max(0.5, min(3.0, price_index + price_delta)), 4)
 
                 updates.append((json.dumps(state), station_id))
 
@@ -323,10 +336,7 @@ class CatalogRepository:
 
             src_row = by_id.get(source_station_id)
             if src_row:
-                try:
-                    src_state = json.loads(src_row["economy_state"]) if src_row["economy_state"] else {}
-                except json.JSONDecodeError:
-                    src_state = {}
+                src_state = self._parse_json_column(src_row["economy_state"])
 
                 src_supply = float(src_state.get("supply_index", 1.0) or 1.0)
                 supply_drop = magnitude * (0.8 + (rng.random() * 0.4))
@@ -335,14 +345,18 @@ class CatalogRepository:
 
             dst_row = by_id.get(destination_station_id)
             if dst_row:
-                try:
-                    dst_state = json.loads(dst_row["economy_state"]) if dst_row["economy_state"] else {}
-                except json.JSONDecodeError:
-                    dst_state = {}
+                dst_state = self._parse_json_column(dst_row["economy_state"])
 
                 dst_demand = float(dst_state.get("demand_index", 1.0) or 1.0)
                 demand_relief = magnitude * (0.6 + (rng.random() * 0.4))
                 dst_state["demand_index"] = round(max(0.1, min(5.0, dst_demand - demand_relief)), 4)
+
+                # Arriving cargo eases destination price pressure — a shipment heading
+                # there signals incoming supply, nudging price slightly downward.
+                dst_price = float(dst_state.get("price_index", 1.0) or 1.0)
+                price_ease = magnitude * 0.3 * (0.8 + (rng.random() * 0.4))
+                dst_state["price_index"] = round(max(0.5, min(3.0, dst_price - price_ease)), 4)
+
                 updates.append((json.dumps(dst_state), destination_station_id))
 
             if updates:
@@ -353,6 +367,37 @@ class CatalogRepository:
                 self._context.conn.commit()
 
             return len(updates)
+
+    def get_economy_summary(self) -> dict[str, Any]:
+        """Return aggregate price/supply/demand stats across all stations."""
+        with self._context.lock:
+            rows = self._context.conn.execute(
+                "SELECT economy_state FROM stations"
+            ).fetchall()
+
+        prices: list[float] = []
+        supplies: list[float] = []
+        demands: list[float] = []
+        for row in rows:
+            state = self._parse_json_column(row["economy_state"])
+            prices.append(float(state.get("price_index", 1.0) or 1.0))
+            supplies.append(float(state.get("supply_index", 1.0) or 1.0))
+            demands.append(float(state.get("demand_index", 1.0) or 1.0))
+
+        n = len(prices)
+        if n == 0:
+            return {"station_count": 0}
+
+        return {
+            "station_count": n,
+            "price_index_avg": round(sum(prices) / n, 3),
+            "price_index_min": round(min(prices), 3),
+            "price_index_max": round(max(prices), 3),
+            "supply_index_avg": round(sum(supplies) / n, 3),
+            "demand_index_avg": round(sum(demands) / n, 3),
+            "stations_above_equilibrium": sum(1 for p in prices if p > 1.0),
+            "stations_below_equilibrium": sum(1 for p in prices if p < 1.0),
+        }
 
     def get_ship_stats_by_faction(self) -> dict[str, int]:
         """Return ship count grouped by faction."""

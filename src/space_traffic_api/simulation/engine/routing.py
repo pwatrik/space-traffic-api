@@ -45,6 +45,9 @@ def pick_destination(
 
 	if str(ship.get("faction") or "") == "merchant" and economy_preference_weight > 0:
 		weight = max(0.0, min(1.0, float(economy_preference_weight)))
+		src_station = station_lookup.get(source_station_id, {})
+		src_derived = src_station.get("economy_derived") if isinstance(src_station.get("economy_derived"), dict) else {}
+		source_fuel = max(0.1, float(src_derived.get("fuel_pressure_score", 1.0) or 1.0))
 		weighted: list[tuple[str, float]] = []
 		for sid in station_ids:
 			station = station_lookup.get(sid, {})
@@ -57,7 +60,10 @@ def pick_destination(
 				price = float(state.get("price_index", 1.0) or 1.0)
 				local_value = (demand / supply) * price
 			local_value = max(0.1, min(10.0, local_value))
-			station_weight = 1.0 + ((local_value - 1.0) * weight)
+			dest_fuel = max(0.1, float(derived.get("fuel_pressure_score", 1.0) or 1.0))
+			fuel_cost_ratio = max(0.5, min(2.0, dest_fuel / source_fuel))
+			net_value = local_value / fuel_cost_ratio
+			station_weight = 1.0 + ((net_value - 1.0) * weight)
 			weighted.append((sid, max(0.001, station_weight)))
 
 		total = sum(w for _, w in weighted)

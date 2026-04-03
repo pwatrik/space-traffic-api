@@ -121,3 +121,79 @@ def test_merchant_routing_is_deterministic_with_seeded_rng():
     ]
 
     assert seq1 == seq2
+
+
+def test_merchant_penalizes_high_fuel_cost_destination():
+    """Merchant prefers a nearby moderate-value over a far same-value when fuel cost is high."""
+    station_lookup = {
+        "SRC": {
+            "id": "SRC",
+            "economy_derived": {"local_value_score": 1.0, "fuel_pressure_score": 1.1},
+        },
+        "DST_NEAR": {
+            "id": "DST_NEAR",
+            "economy_derived": {"local_value_score": 1.5, "fuel_pressure_score": 1.1},
+        },
+        "DST_FAR": {
+            "id": "DST_FAR",
+            "economy_derived": {"local_value_score": 1.5, "fuel_pressure_score": 2.2},
+        },
+    }
+    ship = {"faction": "merchant", "size_class": "medium"}
+    rng = random.Random(7777)
+    counts = {"DST_NEAR": 0, "DST_FAR": 0}
+
+    for _ in range(600):
+        dst = pick_destination(
+            ship=ship,
+            source_station_id="SRC",
+            scenario=None,
+            station_lookup=station_lookup,
+            pirate_conf={},
+            pirate_state=None,
+            rng=rng,
+            station_accepts_size_class=_accepts_all,
+            economy_preference_weight=0.5,
+        )
+        counts[dst] += 1
+
+    assert counts["DST_NEAR"] > counts["DST_FAR"]
+
+
+def test_merchant_routing_uses_price_index_from_economy_state():
+    """When economy_derived is absent, routing falls back to economy_state and price_index influences
+    destination preference: higher price_index means higher effective local value."""
+    station_lookup = {
+        "SRC": {
+            "id": "SRC",
+            "economy_state": {"supply_index": 1.0, "demand_index": 1.0, "price_index": 1.0},
+        },
+        "DST_HIGH_PRICE": {
+            "id": "DST_HIGH_PRICE",
+            "economy_state": {"supply_index": 1.0, "demand_index": 1.0, "price_index": 2.5},
+        },
+        "DST_LOW_PRICE": {
+            "id": "DST_LOW_PRICE",
+            "economy_state": {"supply_index": 1.0, "demand_index": 1.0, "price_index": 0.6},
+        },
+    }
+    ship = {"faction": "merchant", "size_class": "medium"}
+    rng = random.Random(8888)
+    counts = {"DST_HIGH_PRICE": 0, "DST_LOW_PRICE": 0}
+
+    for _ in range(600):
+        dst = pick_destination(
+            ship=ship,
+            source_station_id="SRC",
+            scenario=None,
+            station_lookup=station_lookup,
+            pirate_conf={},
+            pirate_state=None,
+            rng=rng,
+            station_accepts_size_class=_accepts_all,
+            economy_preference_weight=0.5,
+        )
+        if dst in counts:
+            counts[dst] += 1
+
+    assert counts["DST_HIGH_PRICE"] > counts["DST_LOW_PRICE"]

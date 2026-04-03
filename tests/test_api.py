@@ -80,6 +80,33 @@ def test_stats_endpoint():
             app.config["space_store"].close()
 
 
+def test_stats_includes_economy_summary():
+    with TemporaryDirectory() as tmp:
+        os.environ["SPACE_TRAFFIC_DB_PATH"] = f"{tmp}/test.db"
+        os.environ["SPACE_TRAFFIC_DISABLE_GENERATOR"] = "true"
+        app = create_app()
+        client = app.test_client()
+        try:
+            response = client.get("/stats")
+            assert response.status_code == 200
+            payload = response.get_json()
+            assert "economy_summary" in payload, "economy_summary missing from /stats"
+            eco = payload["economy_summary"]
+            assert eco["station_count"] > 0
+            assert "price_index_avg" in eco
+            assert "price_index_min" in eco
+            assert "price_index_max" in eco
+            assert "supply_index_avg" in eco
+            assert "demand_index_avg" in eco
+            assert "stations_above_equilibrium" in eco
+            assert "stations_below_equilibrium" in eco
+            # Sanity bounds
+            assert 0.5 <= eco["price_index_min"] <= eco["price_index_max"] <= 3.0
+            assert eco["stations_above_equilibrium"] + eco["stations_below_equilibrium"] <= eco["station_count"]
+        finally:
+            app.config["space_store"].close()
+
+
 def test_ships_pagination():
     with TemporaryDirectory() as tmp:
         os.environ["SPACE_TRAFFIC_DB_PATH"] = f"{tmp}/test.db"

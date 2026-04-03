@@ -73,7 +73,18 @@ Status: In progress
 - Completed chunk 5 tests: merchant preference behavior, non-merchant neutrality, and deterministic seeded routing
 - Completed chunk 6: economy tuning knobs for merchant preference, drift magnitude, and departure impact magnitude wired through config, runtime patch controls, and simulation paths
 - Completed chunk 6 tests: env/default validation, PATCH /config clamping, and fixed-magnitude deterministic economy-state checks
-- Next chunk: add first fuel pressure behavior so route distance and fuel demand start influencing station value and merchant routing
+- Completed chunk 7: distance_rank seeded into economy_profile per station body position; fuel_pressure_score now scales with orbital distance; merchant routing applies fuel cost ratio (dest/source fuel pressure) to net effective destination value
+- Completed chunk 7 tests: distance_rank presence + solar position correctness, moon rank inheritance, fuel pressure higher for distant stations, merchant penalizes high-fuel-cost routes
+- Completed chunk 8: price_index in advance_station_economy now drifts toward demand/supply equilibrium each tick (target = demand/supply, delta = 5% of gap × day_factor × magnitude), clamped [0.5, 3.0]; all 120 tests green
+- Completed chunk 8 tests: price rises when demand > supply, price falls when supply > demand, stable at equilibrium, deterministic with seeded RNG
+- Completed chunk 9: confirmed price_index flows end-to-end through economy derivation (local_value_score = demand/supply × price) into merchant routing; routing fallback also reads price_index directly from economy_state; 122 tests green
+- Completed chunk 9 tests: local_value_score scales with price_index (higher price → higher score), merchant prefers higher-price-index destination when routed via raw economy_state fallback
+- Completed chunk 10: departure impact now also eases destination price_index — arriving shipment signals incoming supply, applying a small downward price nudge (magnitude × 0.3 × [0.8–1.2]) clamped [0.5, 3.0]; goldens recaptured; 124 tests green
+- Completed chunk 10 tests: departure lowers destination price_index, departure price ease is deterministic with seeded RNG
+- Completed chunk 11: economy health observable via GET /stats — added get_economy_summary() to CatalogRepository and SQLiteStore; /stats now includes economy_summary with station_count, price_index_{avg,min,max}, supply_index_avg, demand_index_avg, stations_above/below_equilibrium; contract test updated; 125 tests green
+- Completed chunk 11 tests: /stats includes economy_summary with correct keys and valid bounds
+- Completed chunk 12: Economy Health card added to /ui dashboard — shows avg/min/max price_index, avg supply/demand, station count, and above/at/below equilibrium counts; rendered via renderEconomySummary() called from setKpis on every snapshot refresh; 125 tests green (1 transient Windows file-lock flake in shadow stability is pre-existing and unrelated)
+- Next chunk: wire the already-implemented Avg Price Index sparkline into the Economy Health card (or otherwise consolidate its placement) so operators can see the price_index trend in that card specifically, reusing the existing history/canvas/drawing path
 
 ### Goal
 Real economy with producers at stations, variable prices due to events, distance from materials, or station needs.

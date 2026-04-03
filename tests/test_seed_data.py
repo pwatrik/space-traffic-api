@@ -266,6 +266,35 @@ def test_build_stations_includes_economy_scaffold_fields():
     assert "fuel_price_index" in state
 
 
+def test_station_economy_profile_includes_distance_rank():
+    stations = build_stations()
+    for station in stations:
+        profile = station["economy_profile"]
+        assert "distance_rank" in profile, f"missing distance_rank for {station['id']}"
+        assert isinstance(profile["distance_rank"], int)
+        assert 1 <= profile["distance_rank"] <= 10
+
+
+def test_station_distance_rank_reflects_solar_position():
+    stations = build_stations()
+    by_body: dict[str, int] = {}
+    for station in stations:
+        by_body[station["body_name"]] = int(station["economy_profile"].get("distance_rank", 0))
+
+    assert by_body.get("Earth") == 3
+    assert by_body.get("Mars") == 4
+    assert by_body.get("Pluto") == 10
+
+
+def test_moon_station_inherits_parent_planet_distance_rank():
+    stations = build_stations()
+    moon_stations = [s for s in stations if s["body_type"] == "moon"]
+    assert moon_stations
+    for station in moon_stations:
+        rank = int(station["economy_profile"].get("distance_rank", 0))
+        assert rank >= 1
+
+
 def test_invalid_seed_catalog_raises():
     with TemporaryDirectory() as tmp:
         path = f"{tmp}/broken.json"

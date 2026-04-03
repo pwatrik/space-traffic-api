@@ -312,6 +312,9 @@ class SQLiteStore:
     def get_ship_state_summary(self) -> dict[str, int]:
         return self.fleet.get_ship_state_summary()
 
+    def get_economy_summary(self) -> dict[str, Any]:
+        return self.catalog.get_economy_summary()
+
     def advance_station_economy(
         self,
         elapsed_days: float,
