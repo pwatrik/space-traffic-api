@@ -239,6 +239,33 @@ def test_build_stations_expands_planetoids_and_asteroid_capabilities():
     assert any("-" in station["name"] for station in stations)
 
 
+def test_build_stations_includes_economy_scaffold_fields():
+    stations = build_stations()
+    assert stations
+
+    sample = stations[0]
+    assert "economy_profile" in sample
+    assert "economy_state" in sample
+
+    profile = sample["economy_profile"]
+    state = sample["economy_state"]
+
+    assert isinstance(profile, dict)
+    assert isinstance(state, dict)
+    assert "temperature_band" in profile
+    assert "food_production" in profile
+    assert "oxygen" in profile
+    assert "water" in profile
+    assert "manufacturing_material_demand" in profile
+    assert "producer_rate" in profile
+    assert "consumer_rate" in profile
+    assert "primary_good" in state
+    assert "supply_index" in state
+    assert "demand_index" in state
+    assert "price_index" in state
+    assert "fuel_price_index" in state
+
+
 def test_invalid_seed_catalog_raises():
     with TemporaryDirectory() as tmp:
         path = f"{tmp}/broken.json"

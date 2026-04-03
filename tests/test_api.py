@@ -169,6 +169,68 @@ def test_stations_pagination():
             app.config["space_store"].close()
 
 
+def test_stations_include_economy_scaffold_fields():
+    with TemporaryDirectory() as tmp:
+        os.environ["SPACE_TRAFFIC_DB_PATH"] = f"{tmp}/test.db"
+        os.environ["SPACE_TRAFFIC_DISABLE_GENERATOR"] = "true"
+        app = create_app()
+        client = app.test_client()
+        try:
+            response = client.get("/stations?limit=1")
+            assert response.status_code == 200
+            payload = response.get_json()
+            assert payload["count"] == 1
+            station = payload["stations"][0]
+            assert "economy_profile" in station
+            assert "economy_state" in station
+            assert isinstance(station["economy_profile"], dict)
+            assert isinstance(station["economy_state"], dict)
+            assert "primary_good" in station["economy_state"]
+            assert "economy_derived" in station
+            assert "local_value_score" in station["economy_derived"]
+            assert "scarcity_index" in station["economy_derived"]
+            assert "fuel_pressure_score" in station["economy_derived"]
+
+            assert 0.1 <= float(station["economy_derived"]["local_value_score"]) <= 10.0
+            assert 0.1 <= float(station["economy_derived"]["scarcity_index"]) <= 10.0
+            assert 0.1 <= float(station["economy_derived"]["fuel_pressure_score"]) <= 10.0
+        finally:
+            app.config["space_store"].close()
+
+
+def test_station_economy_derived_metrics_are_deterministic_across_boots():
+    with TemporaryDirectory() as tmp1, TemporaryDirectory() as tmp2:
+        os.environ["SPACE_TRAFFIC_DISABLE_GENERATOR"] = "true"
+
+        os.environ["SPACE_TRAFFIC_DB_PATH"] = f"{tmp1}/test.db"
+        app1 = create_app()
+        client1 = app1.test_client()
+        try:
+            r1 = client1.get("/stations?limit=5000&order_by=id&order=asc")
+            assert r1.status_code == 200
+            s1 = {
+                row["id"]: row.get("economy_derived", {})
+                for row in r1.get_json()["stations"]
+            }
+        finally:
+            app1.config["space_store"].close()
+
+        os.environ["SPACE_TRAFFIC_DB_PATH"] = f"{tmp2}/test.db"
+        app2 = create_app()
+        client2 = app2.test_client()
+        try:
+            r2 = client2.get("/stations?limit=5000&order_by=id&order=asc")
+            assert r2.status_code == 200
+            s2 = {
+                row["id"]: row.get("economy_derived", {})
+                for row in r2.get_json()["stations"]
+            }
+        finally:
+            app2.config["space_store"].close()
+
+        assert s1 == s2
+
+
 def test_merchant_departure_updates_ship_cargo_from_source_station(monkeypatch):
     with TemporaryDirectory() as tmp:
         monkeypatch.setenv("SPACE_TRAFFIC_DB_PATH", f"{tmp}/test.db")
@@ -223,3 +285,5 @@ def test_merchant_departure_updates_ship_cargo_from_source_station(monkeypatch):
         finally:
             app.config["space_simulation"].stop(timeout=6.0)
             app.config["space_store"].close()
+
+

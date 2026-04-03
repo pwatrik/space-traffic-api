@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import random
 from typing import Any
 
 from .storage import CatalogRepository, ControlRepository, DepartureRepository, FleetRepository, StorageContext
@@ -29,7 +30,9 @@ class SQLiteStore:
                     body_type TEXT NOT NULL,
                     parent_body TEXT NOT NULL,
                     cargo_type TEXT NOT NULL DEFAULT '',
-                    allowed_size_classes TEXT NOT NULL DEFAULT '[]'
+                    allowed_size_classes TEXT NOT NULL DEFAULT '[]',
+                    economy_profile TEXT NOT NULL DEFAULT '{}',
+                    economy_state TEXT NOT NULL DEFAULT '{}'
                 );
 
                 CREATE TABLE IF NOT EXISTS ships (
@@ -102,6 +105,8 @@ class SQLiteStore:
             # Backfill columns for pre-migration databases where tables already existed.
             self._ensure_column("stations", "allowed_size_classes", "TEXT NOT NULL DEFAULT '[]'")
             self._ensure_column("stations", "cargo_type", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column("stations", "economy_profile", "TEXT NOT NULL DEFAULT '{}'")
+            self._ensure_column("stations", "economy_state", "TEXT NOT NULL DEFAULT '{}'")
             self._ensure_column("ships", "size_class", "TEXT NOT NULL DEFAULT 'medium'")
             self._ensure_column("ships", "cargo", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column("ships", "crew", "INTEGER NOT NULL DEFAULT 0")
@@ -306,6 +311,28 @@ class SQLiteStore:
 
     def get_ship_state_summary(self) -> dict[str, int]:
         return self.fleet.get_ship_state_summary()
+
+    def advance_station_economy(
+        self,
+        elapsed_days: float,
+        rng: random.Random | None = None,
+        magnitude: float = 1.0,
+    ) -> int:
+        return self.catalog.advance_station_economy(elapsed_days=elapsed_days, rng=rng, magnitude=magnitude)
+
+    def apply_departure_economy_impact(
+        self,
+        source_station_id: str,
+        destination_station_id: str,
+        rng: random.Random | None = None,
+        magnitude: float = 0.012,
+    ) -> int:
+        return self.catalog.apply_departure_economy_impact(
+            source_station_id=source_station_id,
+            destination_station_id=destination_station_id,
+            rng=rng,
+            magnitude=magnitude,
+        )
 
     def set_control_state(self, state_key: str, payload: dict[str, Any]) -> None:
         self.control.set_state(state_key=state_key, payload=payload)

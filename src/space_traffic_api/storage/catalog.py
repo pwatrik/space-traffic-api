@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import random
 from typing import Any
 
 from .shared import StorageContext
@@ -15,20 +16,44 @@ class CatalogRepository:
         for station in stations:
             row = dict(station)
             row["allowed_size_classes"] = json.dumps(station.get("allowed_size_classes", []))
+            row["economy_profile"] = json.dumps(station.get("economy_profile", {}))
+            row["economy_state"] = json.dumps(station.get("economy_state", {}))
             rows.append(row)
 
         with self._context.lock:
             self._context.conn.executemany(
                 """
-                INSERT INTO stations (id, name, body_name, body_type, parent_body, cargo_type, allowed_size_classes)
-                VALUES (:id, :name, :body_name, :body_type, :parent_body, :cargo_type, :allowed_size_classes)
+                INSERT INTO stations (
+                    id,
+                    name,
+                    body_name,
+                    body_type,
+                    parent_body,
+                    cargo_type,
+                    allowed_size_classes,
+                    economy_profile,
+                    economy_state
+                )
+                VALUES (
+                    :id,
+                    :name,
+                    :body_name,
+                    :body_type,
+                    :parent_body,
+                    :cargo_type,
+                    :allowed_size_classes,
+                    :economy_profile,
+                    :economy_state
+                )
                 ON CONFLICT(id) DO UPDATE SET
                     name=excluded.name,
                     body_name=excluded.body_name,
                     body_type=excluded.body_type,
                     parent_body=excluded.parent_body,
                     cargo_type=excluded.cargo_type,
-                    allowed_size_classes=excluded.allowed_size_classes
+                    allowed_size_classes=excluded.allowed_size_classes,
+                    economy_profile=excluded.economy_profile,
+                    economy_state=excluded.economy_state
                 """,
                 rows,
             )
@@ -109,7 +134,42 @@ class CatalogRepository:
                 row["allowed_size_classes"] = json.loads(raw) if raw else []
             except json.JSONDecodeError:
                 row["allowed_size_classes"] = []
+
+            raw_profile = row.get("economy_profile")
+            try:
+                row["economy_profile"] = json.loads(raw_profile) if raw_profile else {}
+            except json.JSONDecodeError:
+                row["economy_profile"] = {}
+
+            raw_state = row.get("economy_state")
+            try:
+                row["economy_state"] = json.loads(raw_state) if raw_state else {}
+            except json.JSONDecodeError:
+                row["economy_state"] = {}
+
+            row["economy_derived"] = self._derive_station_economy(row)
         return records, total_count
+
+    def _derive_station_economy(self, station: dict[str, Any]) -> dict[str, float]:
+        profile = station.get("economy_profile") if isinstance(station.get("economy_profile"), dict) else {}
+        state = station.get("economy_state") if isinstance(station.get("economy_state"), dict) else {}
+
+        supply = float(state.get("supply_index", 1.0) or 1.0)
+        demand = float(state.get("demand_index", 1.0) or 1.0)
+        price = float(state.get("price_index", 1.0) or 1.0)
+        fuel = float(state.get("fuel_price_index", 1.0) or 1.0)
+        material_demand = float(profile.get("manufacturing_material_demand", 0.5) or 0.5)
+
+        safe_supply = max(0.01, supply)
+        local_value_score = (demand / safe_supply) * price
+        scarcity_index = demand / safe_supply
+        fuel_pressure_score = fuel * (1.0 + (material_demand * 0.15))
+
+        return {
+            "local_value_score": round(max(0.1, min(10.0, local_value_score)), 3),
+            "scarcity_index": round(max(0.1, min(10.0, scarcity_index)), 3),
+            "fuel_pressure_score": round(max(0.1, min(10.0, fuel_pressure_score)), 3),
+        }
 
     def list_ships(
         self,
@@ -167,6 +227,132 @@ class CatalogRepository:
     def count_ships(self) -> int:
         with self._context.lock:
             return int(self._context.conn.execute("SELECT COUNT(*) FROM ships").fetchone()[0])
+
+    def advance_station_economy(
+        self,
+        elapsed_days: float,
+        rng: random.Random | None = None,
+        magnitude: float = 1.0,
+    ) -> int:
+        if elapsed_days <= 0:
+            return 0
+
+        rng = rng or random.Random()
+        magnitude = max(0.1, min(5.0, float(magnitude)))
+        # producer_rate/consumer_rate are per-day rates; elapsed_days keeps the
+        # drift proportional to simulated time elapsed.
+        day_factor = max(1.0 / 1440.0, elapsed_days)
+
+        with self._context.lock:
+            rows = self._context.conn.execute(
+                "SELECT id, economy_profile, economy_state FROM stations"
+            ).fetchall()
+
+            updates: list[tuple[str, str]] = []
+            for row in rows:
+                station_id = str(row["id"])
+
+                try:
+                    profile = json.loads(row["economy_profile"]) if row["economy_profile"] else {}
+                except json.JSONDecodeError:
+                    profile = {}
+
+                try:
+                    state = json.loads(row["economy_state"]) if row["economy_state"] else {}
+                except json.JSONDecodeError:
+                    state = {}
+
+                producer_rate = float(profile.get("producer_rate", 0.06) or 0.06)
+                consumer_rate = float(profile.get("consumer_rate", 0.06) or 0.06)
+
+                supply_index = float(state.get("supply_index", 1.0) or 1.0)
+                demand_index = float(state.get("demand_index", 1.0) or 1.0)
+
+                noise_supply = (rng.random() - 0.5) * 0.01
+                noise_demand = (rng.random() - 0.5) * 0.01
+
+                supply_delta = (((producer_rate * 1.1) - (consumer_rate * 0.8)) * day_factor + noise_supply) * magnitude
+                scarcity_pressure = max(0.0, 1.0 - supply_index)
+                demand_delta = (((consumer_rate * 1.0) - (producer_rate * 0.3)) * day_factor) * magnitude
+                demand_delta += scarcity_pressure * 0.02 * day_factor
+                demand_delta += noise_demand
+
+                state["supply_index"] = round(max(0.1, min(5.0, supply_index + supply_delta)), 4)
+                state["demand_index"] = round(max(0.1, min(5.0, demand_index + demand_delta)), 4)
+
+                updates.append((json.dumps(state), station_id))
+
+            if updates:
+                self._context.conn.executemany(
+                    "UPDATE stations SET economy_state = ? WHERE id = ?",
+                    updates,
+                )
+                self._context.conn.commit()
+
+            return len(updates)
+
+    def apply_departure_economy_impact(
+        self,
+        source_station_id: str,
+        destination_station_id: str,
+        rng: random.Random | None = None,
+        magnitude: float = 0.012,
+    ) -> int:
+        if not source_station_id or not destination_station_id:
+            return 0
+
+        rng = rng or random.Random()
+        magnitude = max(0.001, min(0.2, float(magnitude)))
+
+        with self._context.lock:
+            ids = [source_station_id]
+            if destination_station_id != source_station_id:
+                ids.append(destination_station_id)
+
+            placeholders = ",".join("?" for _ in ids)
+            rows = self._context.conn.execute(
+                f"SELECT id, economy_state FROM stations WHERE id IN ({placeholders})",
+                ids,
+            ).fetchall()
+
+            if not rows:
+                return 0
+
+            by_id = {str(row["id"]): row for row in rows}
+            updates: list[tuple[str, str]] = []
+
+            src_row = by_id.get(source_station_id)
+            if src_row:
+                try:
+                    src_state = json.loads(src_row["economy_state"]) if src_row["economy_state"] else {}
+                except json.JSONDecodeError:
+                    src_state = {}
+
+                src_supply = float(src_state.get("supply_index", 1.0) or 1.0)
+                supply_drop = magnitude * (0.8 + (rng.random() * 0.4))
+                src_state["supply_index"] = round(max(0.1, min(5.0, src_supply - supply_drop)), 4)
+                updates.append((json.dumps(src_state), source_station_id))
+
+            dst_row = by_id.get(destination_station_id)
+            if dst_row:
+                try:
+                    dst_state = json.loads(dst_row["economy_state"]) if dst_row["economy_state"] else {}
+                except json.JSONDecodeError:
+                    dst_state = {}
+
+                dst_demand = float(dst_state.get("demand_index", 1.0) or 1.0)
+                demand_relief = magnitude * (0.6 + (rng.random() * 0.4))
+                dst_state["demand_index"] = round(max(0.1, min(5.0, dst_demand - demand_relief)), 4)
+                updates.append((json.dumps(dst_state), destination_station_id))
+
+            if updates:
+                self._context.conn.executemany(
+                    "UPDATE stations SET economy_state = ? WHERE id = ?",
+                    updates,
+                )
+                self._context.conn.commit()
+
+            return len(updates)
 
     def get_ship_stats_by_faction(self) -> dict[str, int]:
         """Return ship count grouped by faction."""

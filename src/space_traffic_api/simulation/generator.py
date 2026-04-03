@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import queue
 import random
+import sqlite3
 import threading
 import time
 from collections import deque
@@ -64,6 +65,8 @@ class DepartureGenerator(threading.Thread):
         self._next_db_size_check_at = 0.0
         self._next_ship_sequence = self._store.max_ship_sequence() + 1
         self._age_update_accumulator_days: float = 0.0
+        self._economy_snapshot_accumulator_days: float = 0.0
+        self._economy_snapshot_refresh_interval_days: float = 1.0 / 24.0  # once per simulated hour
         self._startup_merchants_launched = False
         self._engine = SimulationEngine()
         self._metrics_lock = threading.Lock()
@@ -137,25 +140,31 @@ class DepartureGenerator(threading.Thread):
             wait_seconds = interval_seconds / simulation_time_scale
             tick_time = self._current_tick_time(state)
 
-            result = self._engine.tick(
-                state=state,
-                scenario=scenario,
-                tick_time=tick_time,
-                interval_seconds=interval_seconds,
-                wait_seconds=wait_seconds,
-                startup_merchants_launched=self._startup_merchants_launched,
-                launch_startup_merchants=self._launch_all_merchants_at_startup,
-                complete_arrivals=lambda t: self._store.complete_ship_arrivals_with_details(
-                    t.isoformat(), now_iso=t.isoformat()
-                ),
-                apply_lifecycle=self._apply_lifecycle,
-                is_globally_interrupted=self._is_globally_interrupted,
-                build_event=self._build_event,
-                apply_faults=self._apply_faults,
-                delayed_insert_pause=lambda _event: self._stop_event.wait(timeout=1.5),
-                persist_and_publish_event=self._persist_and_publish_event,
-                advance_sim_time=self._advance_sim_time,
-            )
+            try:
+                result = self._engine.tick(
+                    state=state,
+                    scenario=scenario,
+                    tick_time=tick_time,
+                    interval_seconds=interval_seconds,
+                    wait_seconds=wait_seconds,
+                    startup_merchants_launched=self._startup_merchants_launched,
+                    launch_startup_merchants=self._launch_all_merchants_at_startup,
+                    complete_arrivals=lambda t: self._store.complete_ship_arrivals_with_details(
+                        t.isoformat(), now_iso=t.isoformat()
+                    ),
+                    apply_lifecycle=self._apply_lifecycle,
+                    is_globally_interrupted=self._is_globally_interrupted,
+                    build_event=self._build_event,
+                    apply_faults=self._apply_faults,
+                    delayed_insert_pause=lambda _event: self._stop_event.wait(timeout=1.5),
+                    persist_and_publish_event=self._persist_and_publish_event,
+                    advance_sim_time=self._advance_sim_time,
+                )
+            except sqlite3.ProgrammingError as exc:
+                if "closed database" in str(exc).lower() or self._stop_event.is_set():
+                    self._stop_event.set()
+                    break
+                raise
 
             self._startup_merchants_launched = result.startup_merchants_launched
             tick_latency_ms = (time.perf_counter() - tick_started) * 1000.0
@@ -265,6 +274,17 @@ class DepartureGenerator(threading.Thread):
             lifecycle_conf=effective_lifecycle,
             arrived_ships=arrived_ships,
         )
+
+        runtime_snap = self._runtime.snapshot()
+        self._store.advance_station_economy(
+            elapsed_days=elapsed_days,
+            rng=self._rng,
+            magnitude=float(runtime_snap.get("economy_drift_magnitude", 1.0) or 1.0),
+        )
+        self._economy_snapshot_accumulator_days += elapsed_days
+        if self._economy_snapshot_accumulator_days >= self._economy_snapshot_refresh_interval_days:
+            self._refresh_station_economy_snapshot()
+            self._economy_snapshot_accumulator_days = 0.0
 
         active_ships = self._store.list_active_ships_for_lifecycle()
         if not active_ships:
@@ -578,14 +598,33 @@ class DepartureGenerator(threading.Thread):
             self._persist_and_publish_event(event, state)
 
     def _persist_and_publish_event(self, event: dict[str, Any], state: dict[str, Any]) -> None:
-        row_id = self._store.insert_departure(event)
+        try:
+            row_id = self._store.insert_departure(event)
+        except sqlite3.ProgrammingError:
+            # Application shutdown can close the DB while the generator thread is finishing a tick.
+            self._stop_event.set()
+            return
         event["id"] = row_id
-        self._store.trim_departures(state["retention_max_rows"])
+        try:
+            self._store.apply_departure_economy_impact(
+                source_station_id=str(event.get("source_station_id") or ""),
+                destination_station_id=str(event.get("destination_station_id") or ""),
+                rng=self._rng,
+                magnitude=float(state.get("economy_departure_impact_magnitude", 0.012) or 0.012),
+            )
+            self._store.trim_departures(state["retention_max_rows"])
+        except sqlite3.ProgrammingError:
+            self._stop_event.set()
+            return
 
         now_monotonic = time.monotonic()
         if now_monotonic >= self._next_db_size_check_at:
             db_max_size_mb = int(state.get("db_max_size_mb", 512))
-            self._store.enforce_db_size_limit(max_db_size_bytes=db_max_size_mb * 1024 * 1024)
+            try:
+                self._store.enforce_db_size_limit(max_db_size_bytes=db_max_size_mb * 1024 * 1024)
+            except sqlite3.ProgrammingError:
+                self._stop_event.set()
+                return
             self._next_db_size_check_at = now_monotonic + 5.0
 
         self._publish_event(event)
@@ -641,16 +680,33 @@ class DepartureGenerator(threading.Thread):
         source_station_id: str,
         scenario: dict[str, Any] | None,
     ) -> str | None:
+        runtime_snap = self._runtime.snapshot()
         return pick_destination(
             ship=ship,
             source_station_id=source_station_id,
             scenario=scenario,
             station_lookup=self._station_lookup,
             pirate_conf=self._lifecycle.get("pirate_activity") or {},
-            pirate_state=self._runtime.snapshot().get("pirate_event"),
+            pirate_state=runtime_snap.get("pirate_event"),
             rng=self._rng,
             station_accepts_size_class=self._station_accepts_size_class,
+            economy_preference_weight=float(
+                _epw if (_epw := runtime_snap.get("economy_preference_weight")) is not None else 0.15
+            ),
         )
+
+    def _refresh_station_economy_snapshot(self) -> None:
+        rows, total = self._store.list_stations(limit=5000, order_by="id", order="asc")
+        if isinstance(total, int) and total > len(rows):
+            rows, _ = self._store.list_stations(limit=total, order_by="id", order="asc")
+        for row in rows:
+            station_id = str(row.get("id") or "")
+            if not station_id or station_id not in self._station_lookup:
+                continue
+            station = self._station_lookup[station_id]
+            station["economy_profile"] = row.get("economy_profile", {})
+            station["economy_state"] = row.get("economy_state", {})
+            station["economy_derived"] = row.get("economy_derived", {})
 
     def _station_accepts_size_class(self, station_id: str, ship_size_class: str) -> bool:
         station = self._station_lookup.get(station_id)

@@ -64,3 +64,45 @@ def test_activate_scenario_fault_and_reset():
             assert ("control", "reset") in actions
         finally:
             app.config["space_store"].close()
+
+
+def test_patch_config_clamps_economy_knobs():
+    with TemporaryDirectory() as tmp:
+        os.environ["SPACE_TRAFFIC_DB_PATH"] = f"{tmp}/test.db"
+        os.environ["SPACE_TRAFFIC_API_KEY"] = "test-key"
+        os.environ["SPACE_TRAFFIC_DISABLE_GENERATOR"] = "true"
+        app = create_app()
+        client = app.test_client()
+        headers = {"X-API-Key": "test-key"}
+        try:
+            low = client.patch(
+                "/config",
+                headers=headers,
+                json={
+                    "economy_preference_weight": -5,
+                    "economy_drift_magnitude": 0,
+                    "economy_departure_impact_magnitude": 0,
+                },
+            )
+            assert low.status_code == 200
+            low_body = low.get_json()
+            assert low_body["economy_preference_weight"] == 0.0
+            assert low_body["economy_drift_magnitude"] == 0.1
+            assert low_body["economy_departure_impact_magnitude"] == 0.001
+
+            high = client.patch(
+                "/config",
+                headers=headers,
+                json={
+                    "economy_preference_weight": 7,
+                    "economy_drift_magnitude": 99,
+                    "economy_departure_impact_magnitude": 5,
+                },
+            )
+            assert high.status_code == 200
+            high_body = high.get_json()
+            assert high_body["economy_preference_weight"] == 1.0
+            assert high_body["economy_drift_magnitude"] == 5.0
+            assert high_body["economy_departure_impact_magnitude"] == 0.2
+        finally:
+            app.config["space_store"].close()

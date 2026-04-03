@@ -41,6 +41,9 @@ class AppConfig:
     disable_generator: bool
     merchant_idle_pause_seconds: int
     simulation_time_scale: float
+    economy_preference_weight: float
+    economy_drift_magnitude: float
+    economy_departure_impact_magnitude: float
 
     def validate(self) -> None:
         errors: list[str] = []
@@ -68,6 +71,15 @@ class AppConfig:
 
         if self.simulation_time_scale <= 0:
             errors.append("SPACE_TRAFFIC_SIMULATION_TIME_SCALE must be > 0")
+
+        if not (0.0 <= self.economy_preference_weight <= 1.0):
+            errors.append("SPACE_TRAFFIC_ECONOMY_PREFERENCE_WEIGHT must be in [0.0, 1.0]")
+
+        if not (0.1 <= self.economy_drift_magnitude <= 5.0):
+            errors.append("SPACE_TRAFFIC_ECONOMY_DRIFT_MAGNITUDE must be in [0.1, 5.0]")
+
+        if not (0.001 <= self.economy_departure_impact_magnitude <= 0.2):
+            errors.append("SPACE_TRAFFIC_ECONOMY_DEPARTURE_IMPACT_MAGNITUDE must be in [0.001, 0.2]")
 
         try:
             datetime.fromisoformat(self.deterministic_start_time.replace("Z", "+00:00"))
@@ -122,6 +134,21 @@ class AppConfig:
                 os.getenv("SPACE_TRAFFIC_SIMULATION_TIME_SCALE"),
                 1.0,
                 "SPACE_TRAFFIC_SIMULATION_TIME_SCALE",
+            ),
+            economy_preference_weight=_as_float(
+                os.getenv("SPACE_TRAFFIC_ECONOMY_PREFERENCE_WEIGHT"),
+                0.15,
+                "SPACE_TRAFFIC_ECONOMY_PREFERENCE_WEIGHT",
+            ),
+            economy_drift_magnitude=_as_float(
+                os.getenv("SPACE_TRAFFIC_ECONOMY_DRIFT_MAGNITUDE"),
+                1.0,
+                "SPACE_TRAFFIC_ECONOMY_DRIFT_MAGNITUDE",
+            ),
+            economy_departure_impact_magnitude=_as_float(
+                os.getenv("SPACE_TRAFFIC_ECONOMY_DEPARTURE_IMPACT_MAGNITUDE"),
+                0.012,
+                "SPACE_TRAFFIC_ECONOMY_DEPARTURE_IMPACT_MAGNITUDE",
             ),
         )
         config.validate()

@@ -58,6 +58,22 @@ Improve release confidence and day-to-day operability without introducing enterp
 
 ## Milestone 2: Economy Simulation
 Estimated effort: 8-12 sessions
+Status: In progress
+
+### Progress
+- Completed chunk 1: station economy scaffolding fields (economy_profile and economy_state) seeded, persisted, and exposed via /stations
+- Completed chunk 1 tests: seed-data shape checks, API shape checks, and migration-column checks
+- Completed chunk 2: read-only derived station economy metrics (local_value_score, scarcity_index, fuel_pressure_score) in /stations responses
+- Completed chunk 2 tests: bounds checks and deterministic stability across app boots
+- Completed chunk 3: producer_rate/consumer_rate station profile fields plus lightweight tick update for supply/demand indexes
+- Completed chunk 3 tests: supply/demand drift bounds and deterministic repeatability with seeded RNG
+- Completed chunk 4: departure-linked economy impacts (source supply down, destination demand eased) with bounded deterministic adjustments
+- Completed chunk 4 tests: event-impact bounds and deterministic repeatability with seeded RNG
+- Completed chunk 5: merchant destination preference now includes conservative economy_derived value weighting
+- Completed chunk 5 tests: merchant preference behavior, non-merchant neutrality, and deterministic seeded routing
+- Completed chunk 6: economy tuning knobs for merchant preference, drift magnitude, and departure impact magnitude wired through config, runtime patch controls, and simulation paths
+- Completed chunk 6 tests: env/default validation, PATCH /config clamping, and fixed-magnitude deterministic economy-state checks
+- Next chunk: add first fuel pressure behavior so route distance and fuel demand start influencing station value and merchant routing
 
 ### Goal
 Real economy with producers at stations, variable prices due to events, distance from materials, or station needs.

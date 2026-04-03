@@ -90,6 +90,8 @@ def test_create_app_migrates_legacy_schema_columns(monkeypatch):
             ship_state_cols = _column_names(db_path, "ship_state")
             assert "allowed_size_classes" in stations_cols
             assert "cargo_type" in stations_cols
+            assert "economy_profile" in stations_cols
+            assert "economy_state" in stations_cols
             assert "size_class" in ships_cols
             assert "cargo" in ships_cols
             assert "crew" in ships_cols
