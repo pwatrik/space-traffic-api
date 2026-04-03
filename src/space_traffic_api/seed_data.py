@@ -492,6 +492,8 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
                 "oxygen": 0.80,
                 "water": 0.70,
                 "manufacturing_material_demand": 0.65,
+                "producer_rate": 0.075,
+                "consumer_rate": 0.060,
             },
             "moon": {
                 "temperature_band": "cold",
@@ -499,6 +501,8 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
                 "oxygen": 0.45,
                 "water": 0.40,
                 "manufacturing_material_demand": 0.75,
+                "producer_rate": 0.050,
+                "consumer_rate": 0.065,
             },
             "asteroid": {
                 "temperature_band": "cold",
@@ -506,6 +510,8 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
                 "oxygen": 0.25,
                 "water": 0.30,
                 "manufacturing_material_demand": 0.85,
+                "producer_rate": 0.070,
+                "consumer_rate": 0.055,
             },
         }
         row = dict(baseline.get(body_type, baseline["planet"]))
@@ -517,6 +523,8 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
             max(0.0, min(1.0, float(row["manufacturing_material_demand"]) + jitter())),
             3,
         )
+        row["producer_rate"] = round(max(0.01, min(0.25, float(row["producer_rate"]) + jitter() * 0.04)), 4)
+        row["consumer_rate"] = round(max(0.01, min(0.25, float(row["consumer_rate"]) + jitter() * 0.04)), 4)
         return row
 
     def _station_economy_state(cargo_type: str) -> dict[str, float | str]:

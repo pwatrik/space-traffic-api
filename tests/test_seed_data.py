@@ -257,6 +257,8 @@ def test_build_stations_includes_economy_scaffold_fields():
     assert "oxygen" in profile
     assert "water" in profile
     assert "manufacturing_material_demand" in profile
+    assert "producer_rate" in profile
+    assert "consumer_rate" in profile
     assert "primary_good" in state
     assert "supply_index" in state
     assert "demand_index" in state

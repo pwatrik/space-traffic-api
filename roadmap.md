@@ -65,7 +65,9 @@ Status: In progress
 - Completed chunk 1 tests: seed-data shape checks, API shape checks, and migration-column checks
 - Completed chunk 2: read-only derived station economy metrics (local_value_score, scarcity_index, fuel_pressure_score) in /stations responses
 - Completed chunk 2 tests: bounds checks and deterministic stability across app boots
-- Next chunk: add producer/consumer rates per station and a lightweight tick update that adjusts supply/demand indexes only
+- Completed chunk 3: producer_rate/consumer_rate station profile fields plus lightweight tick update for supply/demand indexes
+- Completed chunk 3 tests: supply/demand drift bounds and deterministic repeatability with seeded RNG
+- Next chunk: connect departure events to station economy state (source supply down, destination demand eased) with small deterministic adjustments
 
 ### Goal
 Real economy with producers at stations, variable prices due to events, distance from materials, or station needs.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import random
 from typing import Any
 
 from .storage import CatalogRepository, ControlRepository, DepartureRepository, FleetRepository, StorageContext
@@ -310,6 +311,9 @@ class SQLiteStore:
 
     def get_ship_state_summary(self) -> dict[str, int]:
         return self.fleet.get_ship_state_summary()
+
+    def advance_station_economy(self, elapsed_days: float, rng: random.Random | None = None) -> int:
+        return self.catalog.advance_station_economy(elapsed_days=elapsed_days, rng=rng)
 
     def set_control_state(self, state_key: str, payload: dict[str, Any]) -> None:
         self.control.set_state(state_key=state_key, payload=payload)

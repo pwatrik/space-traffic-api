@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import random
 from typing import Any
 
 from .shared import StorageContext
@@ -226,6 +227,61 @@ class CatalogRepository:
     def count_ships(self) -> int:
         with self._context.lock:
             return int(self._context.conn.execute("SELECT COUNT(*) FROM ships").fetchone()[0])
+
+    def advance_station_economy(self, elapsed_days: float, rng: random.Random | None = None) -> int:
+        if elapsed_days <= 0:
+            return 0
+
+        rng = rng or random.Random()
+        minute_factor = max(1.0 / 300.0, elapsed_days * 1440.0)
+
+        with self._context.lock:
+            rows = self._context.conn.execute(
+                "SELECT id, economy_profile, economy_state FROM stations"
+            ).fetchall()
+
+            updates: list[tuple[str, str]] = []
+            for row in rows:
+                station_id = str(row["id"])
+
+                try:
+                    profile = json.loads(row["economy_profile"]) if row["economy_profile"] else {}
+                except json.JSONDecodeError:
+                    profile = {}
+
+                try:
+                    state = json.loads(row["economy_state"]) if row["economy_state"] else {}
+                except json.JSONDecodeError:
+                    state = {}
+
+                producer_rate = float(profile.get("producer_rate", 0.06) or 0.06)
+                consumer_rate = float(profile.get("consumer_rate", 0.06) or 0.06)
+
+                supply_index = float(state.get("supply_index", 1.0) or 1.0)
+                demand_index = float(state.get("demand_index", 1.0) or 1.0)
+
+                noise_supply = (rng.random() - 0.5) * 0.01
+                noise_demand = (rng.random() - 0.5) * 0.01
+
+                supply_delta = ((producer_rate * 1.1) - (consumer_rate * 0.8)) * minute_factor + noise_supply
+                scarcity_pressure = max(0.0, 1.0 - supply_index)
+                demand_delta = ((consumer_rate * 1.0) - (producer_rate * 0.3)) * minute_factor
+                demand_delta += scarcity_pressure * 0.02 * minute_factor
+                demand_delta += noise_demand
+
+                state["supply_index"] = round(max(0.1, min(5.0, supply_index + supply_delta)), 4)
+                state["demand_index"] = round(max(0.1, min(5.0, demand_index + demand_delta)), 4)
+
+                updates.append((json.dumps(state), station_id))
+
+            if updates:
+                self._context.conn.executemany(
+                    "UPDATE stations SET economy_state = ? WHERE id = ?",
+                    updates,
+                )
+                self._context.conn.commit()
+
+            return len(updates)
 
     def get_ship_stats_by_faction(self) -> dict[str, int]:
         """Return ship count grouped by faction."""

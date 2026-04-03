@@ -266,6 +266,8 @@ class DepartureGenerator(threading.Thread):
             arrived_ships=arrived_ships,
         )
 
+        self._store.advance_station_economy(elapsed_days=elapsed_days, rng=self._rng)
+
         active_ships = self._store.list_active_ships_for_lifecycle()
         if not active_ships:
             return
