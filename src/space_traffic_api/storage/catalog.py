@@ -239,7 +239,9 @@ class CatalogRepository:
 
         rng = rng or random.Random()
         magnitude = max(0.1, min(5.0, float(magnitude)))
-        minute_factor = max(1.0 / 300.0, elapsed_days * 1440.0)
+        # producer_rate/consumer_rate are per-day rates; elapsed_days keeps the
+        # drift proportional to simulated time elapsed.
+        day_factor = max(1.0 / 1440.0, elapsed_days)
 
         with self._context.lock:
             rows = self._context.conn.execute(
@@ -266,13 +268,13 @@ class CatalogRepository:
                 supply_index = float(state.get("supply_index", 1.0) or 1.0)
                 demand_index = float(state.get("demand_index", 1.0) or 1.0)
 
-                noise_supply = (rng.random() - 0.5) * 0.01 * magnitude
-                noise_demand = (rng.random() - 0.5) * 0.01 * magnitude
+                noise_supply = (rng.random() - 0.5) * 0.01
+                noise_demand = (rng.random() - 0.5) * 0.01
 
-                supply_delta = (((producer_rate * 1.1) - (consumer_rate * 0.8)) * minute_factor + noise_supply) * magnitude
+                supply_delta = (((producer_rate * 1.1) - (consumer_rate * 0.8)) * day_factor + noise_supply) * magnitude
                 scarcity_pressure = max(0.0, 1.0 - supply_index)
-                demand_delta = (((consumer_rate * 1.0) - (producer_rate * 0.3)) * minute_factor) * magnitude
-                demand_delta += scarcity_pressure * 0.02 * minute_factor
+                demand_delta = (((consumer_rate * 1.0) - (producer_rate * 0.3)) * day_factor) * magnitude
+                demand_delta += scarcity_pressure * 0.02 * day_factor
                 demand_delta += noise_demand
 
                 state["supply_index"] = round(max(0.1, min(5.0, supply_index + supply_delta)), 4)

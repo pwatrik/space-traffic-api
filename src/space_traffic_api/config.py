@@ -75,11 +75,11 @@ class AppConfig:
         if not (0.0 <= self.economy_preference_weight <= 1.0):
             errors.append("SPACE_TRAFFIC_ECONOMY_PREFERENCE_WEIGHT must be in [0.0, 1.0]")
 
-        if self.economy_drift_magnitude <= 0:
-            errors.append("SPACE_TRAFFIC_ECONOMY_DRIFT_MAGNITUDE must be > 0")
+        if not (0.1 <= self.economy_drift_magnitude <= 5.0):
+            errors.append("SPACE_TRAFFIC_ECONOMY_DRIFT_MAGNITUDE must be in [0.1, 5.0]")
 
-        if self.economy_departure_impact_magnitude <= 0:
-            errors.append("SPACE_TRAFFIC_ECONOMY_DEPARTURE_IMPACT_MAGNITUDE must be > 0")
+        if not (0.001 <= self.economy_departure_impact_magnitude <= 0.2):
+            errors.append("SPACE_TRAFFIC_ECONOMY_DEPARTURE_IMPACT_MAGNITUDE must be in [0.001, 0.2]")
 
         try:
             datetime.fromisoformat(self.deterministic_start_time.replace("Z", "+00:00"))

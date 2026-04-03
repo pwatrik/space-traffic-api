@@ -65,6 +65,8 @@ class DepartureGenerator(threading.Thread):
         self._next_db_size_check_at = 0.0
         self._next_ship_sequence = self._store.max_ship_sequence() + 1
         self._age_update_accumulator_days: float = 0.0
+        self._economy_snapshot_accumulator_days: float = 0.0
+        self._economy_snapshot_refresh_interval_days: float = 1.0 / 24.0  # once per simulated hour
         self._startup_merchants_launched = False
         self._engine = SimulationEngine()
         self._metrics_lock = threading.Lock()
@@ -158,9 +160,11 @@ class DepartureGenerator(threading.Thread):
                     persist_and_publish_event=self._persist_and_publish_event,
                     advance_sim_time=self._advance_sim_time,
                 )
-            except sqlite3.ProgrammingError:
-                self._stop_event.set()
-                break
+            except sqlite3.ProgrammingError as exc:
+                if "closed database" in str(exc).lower() or self._stop_event.is_set():
+                    self._stop_event.set()
+                    break
+                raise
 
             self._startup_merchants_launched = result.startup_merchants_launched
             tick_latency_ms = (time.perf_counter() - tick_started) * 1000.0
@@ -277,7 +281,10 @@ class DepartureGenerator(threading.Thread):
             rng=self._rng,
             magnitude=float(runtime_snap.get("economy_drift_magnitude", 1.0) or 1.0),
         )
-        self._refresh_station_economy_snapshot()
+        self._economy_snapshot_accumulator_days += elapsed_days
+        if self._economy_snapshot_accumulator_days >= self._economy_snapshot_refresh_interval_days:
+            self._refresh_station_economy_snapshot()
+            self._economy_snapshot_accumulator_days = 0.0
 
         active_ships = self._store.list_active_ships_for_lifecycle()
         if not active_ships:
@@ -683,11 +690,15 @@ class DepartureGenerator(threading.Thread):
             pirate_state=runtime_snap.get("pirate_event"),
             rng=self._rng,
             station_accepts_size_class=self._station_accepts_size_class,
-            economy_preference_weight=float(runtime_snap.get("economy_preference_weight", 0.15) or 0.15),
+            economy_preference_weight=float(
+                runtime_snap.get("economy_preference_weight") if runtime_snap.get("economy_preference_weight") is not None else 0.15
+            ),
         )
 
     def _refresh_station_economy_snapshot(self) -> None:
-        rows, _ = self._store.list_stations(limit=5000, order_by="id", order="asc")
+        rows, total = self._store.list_stations(limit=5000, order_by="id", order="asc")
+        if isinstance(total, int) and total > len(rows):
+            rows, _ = self._store.list_stations(limit=total, order_by="id", order="asc")
         for row in rows:
             station_id = str(row.get("id") or "")
             if not station_id or station_id not in self._station_lookup:
