@@ -402,6 +402,55 @@ function renderEconomySummary(eco) {
     `Above eq: ${above}  ·  At eq: ${at}  ·  Below eq: ${below}`;
 }
 
+function renderOrbitalDiagnostics(config) {
+  const diagnostics = config && config.orbital_diagnostics ? config.orbital_diagnostics : null;
+  const enabled = Boolean(diagnostics && diagnostics.enabled);
+  const bodyCount = Number(diagnostics && diagnostics.body_count) || 0;
+  const anchorCount = Number(diagnostics && diagnostics.station_anchor_count) || 0;
+  const bodies = diagnostics && diagnostics.bodies ? diagnostics.bodies : {};
+
+  const entries = Object.values(bodies)
+    .sort((a, b) => {
+      const rankA = Number(a.distance_rank) || 0;
+      const rankB = Number(b.distance_rank) || 0;
+      if (rankA !== rankB) {
+        return rankA - rankB;
+      }
+      return String(a.body_id || "").localeCompare(String(b.body_id || ""));
+    })
+    .slice(0, 10);
+
+  document.getElementById("orb-enabled").textContent = enabled ? "On" : "Off";
+  document.getElementById("orb-body-count").textContent = fmtNum(bodyCount);
+  document.getElementById("orb-anchor-count").textContent = fmtNum(anchorCount);
+  document.getElementById("orb-shown-count").textContent = fmtNum(entries.length);
+  document.getElementById("orb-meta").textContent = enabled
+    ? `Live orbital positions from current simulation tick · showing ${entries.length} closest-by-rank bodies`
+    : "Orbital model is disabled. Showing seeded baseline diagnostics.";
+
+  const tbody = document.getElementById("orbital-body-body");
+  tbody.innerHTML = "";
+  if (!entries.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="6">No orbital body diagnostics available.</td>';
+    tbody.appendChild(tr);
+    return;
+  }
+
+  for (const row of entries) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = [
+      `<td>${escapeHtml(row.body_id || "-")}</td>`,
+      `<td>${escapeHtml(row.body_type || "-")}</td>`,
+      `<td>${Number(row.distance_rank || 0).toFixed(1)}</td>`,
+      `<td>${Number(row.phase_radians || 0).toFixed(3)}</td>`,
+      `<td>${Number(row.x || 0).toFixed(3)}</td>`,
+      `<td>${Number(row.y || 0).toFixed(3)}</td>`
+    ].join("");
+    tbody.appendChild(tr);
+  }
+}
+
 function setKpis(stats) {
   const summary = stats.summary || {};
   document.getElementById("kpi-ships").textContent = fmtNum(summary.ships);
@@ -492,6 +541,7 @@ async function refreshSnapshots() {
   ]);
   updateSimulationNow(config.simulation_now);
   setKpis(stats);
+  renderOrbitalDiagnostics(config);
   renderShipStates(statePayload.ships || []);
   renderPirateEventSummary(config);
 }
