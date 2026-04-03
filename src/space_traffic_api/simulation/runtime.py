@@ -40,6 +40,9 @@ class RuntimeState:
             "db_max_size_mb": config.db_max_size_mb,
             "merchant_idle_pause_seconds": config.merchant_idle_pause_seconds,
             "simulation_time_scale": config.simulation_time_scale,
+            "economy_preference_weight": config.economy_preference_weight,
+            "economy_drift_magnitude": config.economy_drift_magnitude,
+            "economy_departure_impact_magnitude": config.economy_departure_impact_magnitude,
             "simulation_now": _parse_deterministic_start(config.deterministic_start_time).isoformat() if config.deterministic_mode else datetime.now(UTC).isoformat(),
             "active_scenario": None,
             "active_faults": {},
@@ -114,12 +117,15 @@ class RuntimeState:
             "db_max_size_mb",
             "merchant_idle_pause_seconds",
             "simulation_time_scale",
-                   "pirate_spawn_probability_per_day",
-                   "pirate_strength_start",
-                   "pirate_strength_end_threshold",
-                   "pirate_strength_decay_per_day",
-                   "pirate_respawn_min_days",
-                   "pirate_respawn_max_days",
+                        "economy_preference_weight",
+                        "economy_drift_magnitude",
+                        "economy_departure_impact_magnitude",
+                        "pirate_spawn_probability_per_day",
+                        "pirate_strength_start",
+                        "pirate_strength_end_threshold",
+                        "pirate_strength_decay_per_day",
+                        "pirate_respawn_min_days",
+                        "pirate_respawn_max_days",
         }
 
         with self._lock:
@@ -143,6 +149,24 @@ class RuntimeState:
             except (TypeError, ValueError):
                 scale = 1.0
             self._state["simulation_time_scale"] = max(0.1, scale)
+
+            try:
+                econ_weight = float(self._state.get("economy_preference_weight", 0.15))
+            except (TypeError, ValueError):
+                econ_weight = 0.15
+            self._state["economy_preference_weight"] = max(0.0, min(1.0, econ_weight))
+
+            try:
+                drift_mag = float(self._state.get("economy_drift_magnitude", 1.0))
+            except (TypeError, ValueError):
+                drift_mag = 1.0
+            self._state["economy_drift_magnitude"] = max(0.1, min(5.0, drift_mag))
+
+            try:
+                departure_mag = float(self._state.get("economy_departure_impact_magnitude", 0.012))
+            except (TypeError, ValueError):
+                departure_mag = 0.012
+            self._state["economy_departure_impact_magnitude"] = max(0.001, min(0.2, departure_mag))
 
             def _to_float(value: Any) -> float | None:
                 try:

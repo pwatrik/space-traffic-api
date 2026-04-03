@@ -177,3 +177,45 @@ def test_apply_departure_economy_impact_is_deterministic_with_seeded_rng():
         finally:
             s1.close()
             s2.close()
+
+
+def test_economy_magnitude_controls_are_deterministic_with_seeded_rng():
+    with TemporaryDirectory() as tmp1, TemporaryDirectory() as tmp2:
+        stations = build_stations()
+
+        db1 = os.path.join(tmp1, "test1.db")
+        db2 = os.path.join(tmp2, "test2.db")
+
+        s1 = SQLiteStore(db1)
+        s2 = SQLiteStore(db2)
+        s1.init_schema()
+        s2.init_schema()
+        s1.seed_stations(stations)
+        s2.seed_stations(stations)
+        try:
+            s1.advance_station_economy(elapsed_days=0.75, rng=random.Random(2027), magnitude=1.7)
+            s2.advance_station_economy(elapsed_days=0.75, rng=random.Random(2027), magnitude=1.7)
+
+            s1.apply_departure_economy_impact(
+                source_station_id="STN-PLANET-EARTH",
+                destination_station_id="STN-PLANET-MARS",
+                rng=random.Random(2028),
+                magnitude=0.03,
+            )
+            s2.apply_departure_economy_impact(
+                source_station_id="STN-PLANET-EARTH",
+                destination_station_id="STN-PLANET-MARS",
+                rng=random.Random(2028),
+                magnitude=0.03,
+            )
+
+            rows1, _ = s1.list_stations(limit=5000, order_by="id", order="asc")
+            rows2, _ = s2.list_stations(limit=5000, order_by="id", order="asc")
+
+            state1 = {row["id"]: row.get("economy_state", {}) for row in rows1}
+            state2 = {row["id"]: row.get("economy_state", {}) for row in rows2}
+
+            assert state1 == state2
+        finally:
+            s1.close()
+            s2.close()

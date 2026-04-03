@@ -285,3 +285,5 @@ def test_merchant_departure_updates_ship_cargo_from_source_station(monkeypatch):
         finally:
             app.config["space_simulation"].stop(timeout=6.0)
             app.config["space_store"].close()
+
+

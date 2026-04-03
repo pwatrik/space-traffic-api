@@ -312,8 +312,13 @@ class SQLiteStore:
     def get_ship_state_summary(self) -> dict[str, int]:
         return self.fleet.get_ship_state_summary()
 
-    def advance_station_economy(self, elapsed_days: float, rng: random.Random | None = None) -> int:
-        return self.catalog.advance_station_economy(elapsed_days=elapsed_days, rng=rng)
+    def advance_station_economy(
+        self,
+        elapsed_days: float,
+        rng: random.Random | None = None,
+        magnitude: float = 1.0,
+    ) -> int:
+        return self.catalog.advance_station_economy(elapsed_days=elapsed_days, rng=rng, magnitude=magnitude)
 
     def apply_departure_economy_impact(
         self,

@@ -71,7 +71,9 @@ Status: In progress
 - Completed chunk 4 tests: event-impact bounds and deterministic repeatability with seeded RNG
 - Completed chunk 5: merchant destination preference now includes conservative economy_derived value weighting
 - Completed chunk 5 tests: merchant preference behavior, non-merchant neutrality, and deterministic seeded routing
-- Next chunk: add optional config knobs for economy weighting and drift magnitudes to tune behavior safely
+- Completed chunk 6: economy tuning knobs for merchant preference, drift magnitude, and departure impact magnitude wired through config, runtime patch controls, and simulation paths
+- Completed chunk 6 tests: env/default validation, PATCH /config clamping, and fixed-magnitude deterministic economy-state checks
+- Next chunk: add first fuel pressure behavior so route distance and fuel demand start influencing station value and merchant routing
 
 ### Goal
 Real economy with producers at stations, variable prices due to events, distance from materials, or station needs.

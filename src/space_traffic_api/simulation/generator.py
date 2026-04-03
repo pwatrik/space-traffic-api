@@ -271,7 +271,12 @@ class DepartureGenerator(threading.Thread):
             arrived_ships=arrived_ships,
         )
 
-        self._store.advance_station_economy(elapsed_days=elapsed_days, rng=self._rng)
+        runtime_snap = self._runtime.snapshot()
+        self._store.advance_station_economy(
+            elapsed_days=elapsed_days,
+            rng=self._rng,
+            magnitude=float(runtime_snap.get("economy_drift_magnitude", 1.0) or 1.0),
+        )
         self._refresh_station_economy_snapshot()
 
         active_ships = self._store.list_active_ships_for_lifecycle()
@@ -598,6 +603,7 @@ class DepartureGenerator(threading.Thread):
                 source_station_id=str(event.get("source_station_id") or ""),
                 destination_station_id=str(event.get("destination_station_id") or ""),
                 rng=self._rng,
+                magnitude=float(state.get("economy_departure_impact_magnitude", 0.012) or 0.012),
             )
             self._store.trim_departures(state["retention_max_rows"])
         except sqlite3.ProgrammingError:
@@ -667,16 +673,17 @@ class DepartureGenerator(threading.Thread):
         source_station_id: str,
         scenario: dict[str, Any] | None,
     ) -> str | None:
+        runtime_snap = self._runtime.snapshot()
         return pick_destination(
             ship=ship,
             source_station_id=source_station_id,
             scenario=scenario,
             station_lookup=self._station_lookup,
             pirate_conf=self._lifecycle.get("pirate_activity") or {},
-            pirate_state=self._runtime.snapshot().get("pirate_event"),
+            pirate_state=runtime_snap.get("pirate_event"),
             rng=self._rng,
             station_accepts_size_class=self._station_accepts_size_class,
-            economy_preference_weight=0.15,
+            economy_preference_weight=float(runtime_snap.get("economy_preference_weight", 0.15) or 0.15),
         )
 
     def _refresh_station_economy_snapshot(self) -> None:
