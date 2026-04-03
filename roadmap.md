@@ -79,7 +79,9 @@ Status: In progress
 - Completed chunk 8 tests: price rises when demand > supply, price falls when supply > demand, stable at equilibrium, deterministic with seeded RNG
 - Completed chunk 9: confirmed price_index flows end-to-end through economy derivation (local_value_score = demand/supply × price) into merchant routing; routing fallback also reads price_index directly from economy_state; 122 tests green
 - Completed chunk 9 tests: local_value_score scales with price_index (higher price → higher score), merchant prefers higher-price-index destination when routed via raw economy_state fallback
-- Next chunk: apply a small price_index ease to destination station on departure so arriving goods directly lower destination price pressure, completing the tight supply-demand-price feedback loop
+- Completed chunk 10: departure impact now also eases destination price_index — arriving shipment signals incoming supply, applying a small downward price nudge (magnitude × 0.3 × [0.8–1.2]) clamped [0.5, 3.0]; goldens recaptured; 124 tests green
+- Completed chunk 10 tests: departure lowers destination price_index, departure price ease is deterministic with seeded RNG
+- Next chunk: expose economy tick controls (drift magnitude, departure impact magnitude) as live-patchable runtime knobs via PATCH /config, and wire a per-tick price_index summary into the /status endpoint so the current economy health is observable
 
 ### Goal
 Real economy with producers at stations, variable prices due to events, distance from materials, or station needs.

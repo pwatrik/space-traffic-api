@@ -419,3 +419,69 @@ def test_price_index_drift_is_deterministic_with_seeded_rng():
         finally:
             s1.close()
             s2.close()
+
+
+def test_departure_impact_eases_destination_price_index():
+    """A departure shipment should lower the destination station's price_index."""
+    with TemporaryDirectory() as tmp:
+        db_path = os.path.join(tmp, "test.db")
+        store = SQLiteStore(db_path)
+        store.init_schema()
+        store.seed_stations(build_stations())
+        try:
+            rows_before, _ = store.list_stations(limit=5000, order_by="id", order="asc")
+            before = {row["id"]: float((row.get("economy_state") or {}).get("price_index", 1.0)) for row in rows_before}
+
+            destination_id = "STN-PLANET-MARS"
+            store.apply_departure_economy_impact(
+                source_station_id="STN-PLANET-EARTH",
+                destination_station_id=destination_id,
+                rng=random.Random(5555),
+                magnitude=0.05,
+            )
+
+            rows_after, _ = store.list_stations(limit=5000, order_by="id", order="asc")
+            after = {row["id"]: float((row.get("economy_state") or {}).get("price_index", 1.0)) for row in rows_after}
+
+            assert after[destination_id] < before[destination_id], (
+                f"Expected destination price to fall: before={before[destination_id]}, after={after[destination_id]}"
+            )
+        finally:
+            store.close()
+
+
+def test_departure_price_ease_is_deterministic_with_seeded_rng():
+    """Two identical stores using the same seeded RNG produce identical price_index after departure impact."""
+    with TemporaryDirectory() as tmp1, TemporaryDirectory() as tmp2:
+        stations = build_stations()
+        db1 = os.path.join(tmp1, "test1.db")
+        db2 = os.path.join(tmp2, "test2.db")
+        s1 = SQLiteStore(db1)
+        s2 = SQLiteStore(db2)
+        s1.init_schema()
+        s2.init_schema()
+        s1.seed_stations(stations)
+        s2.seed_stations(stations)
+        try:
+            s1.apply_departure_economy_impact(
+                source_station_id="STN-PLANET-EARTH",
+                destination_station_id="STN-PLANET-MARS",
+                rng=random.Random(6789),
+                magnitude=0.04,
+            )
+            s2.apply_departure_economy_impact(
+                source_station_id="STN-PLANET-EARTH",
+                destination_station_id="STN-PLANET-MARS",
+                rng=random.Random(6789),
+                magnitude=0.04,
+            )
+
+            rows1, _ = s1.list_stations(limit=5000, order_by="id", order="asc")
+            rows2, _ = s2.list_stations(limit=5000, order_by="id", order="asc")
+
+            prices1 = {row["id"]: row["economy_state"].get("price_index") for row in rows1}
+            prices2 = {row["id"]: row["economy_state"].get("price_index") for row in rows2}
+            assert prices1 == prices2
+        finally:
+            s1.close()
+            s2.close()

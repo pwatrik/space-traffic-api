@@ -25,7 +25,7 @@ from shadow.fixtures import DeterministicRun
 
 # ---------------------------------------------------------------------------
 # Canonical sequences — presets from tests/shadow/fixtures.py
-# Generated: 2026-04-02 (capture script)
+# Generated: 2026-04-03 (capture script — chunk 10: departure price ease)
 # ---------------------------------------------------------------------------
 
 GOLDEN_BY_PRESET: dict[str, list[dict[str, str]]] = {
@@ -37,28 +37,28 @@ GOLDEN_BY_PRESET: dict[str, list[dict[str, str]]] = {
             "destination_station_id": "STN-PLANET-EARTH-ORB3",
         },
         {
-            "event_uid": "EVT-000000002-377925b3",
+            "event_uid": "EVT-000000002-e6e96d45",
             "ship_id": "SHIP-0006",
             "source_station_id": "STN-PLANET-MARS-ORB1",
-            "destination_station_id": "STN-PLANET-EARTH-ORB2",
+            "destination_station_id": "STN-PLANET-EARTH-ORB3",
         },
         {
-            "event_uid": "EVT-000000003-366c5acd",
+            "event_uid": "EVT-000000003-2dd301c8",
             "ship_id": "SHIP-0008",
             "source_station_id": "STN-PLANET-EARTH-ORB2",
-            "destination_station_id": "STN-PLANET-MARS-ORB1",
+            "destination_station_id": "STN-PLANET-EARTH-ORB1",
         },
         {
-            "event_uid": "EVT-000000004-f2655b19",
+            "event_uid": "EVT-000000004-7812f170",
             "ship_id": "SHIP-0009",
             "source_station_id": "STN-PLANET-MARS-ORB1",
-            "destination_station_id": "STN-MOON-PHOBOS",
+            "destination_station_id": "STN-PLANET-EARTH-ORB3",
         },
         {
-            "event_uid": "EVT-000000005-0aeb34f9",
+            "event_uid": "EVT-000000005-eee1f220",
             "ship_id": "SHIP-0001",
             "source_station_id": "STN-PLANET-MARS-ORB1",
-            "destination_station_id": "STN-PLANET-EARTH",
+            "destination_station_id": "STN-PLANET-EARTH-ORB2",
         },
     ],
     "war_heavy": [
@@ -69,25 +69,25 @@ GOLDEN_BY_PRESET: dict[str, list[dict[str, str]]] = {
             "destination_station_id": "STN-MOON-PHOBOS",
         },
         {
-            "event_uid": "EVT-000000002-63783933",
+            "event_uid": "EVT-000000002-54dc77a7",
             "ship_id": "SHIP-0001",
             "source_station_id": "STN-PLANET-MARS-ORB1",
-            "destination_station_id": "STN-PLANET-EARTH-ORB1",
+            "destination_station_id": "STN-MOON-PHOBOS",
         },
         {
-            "event_uid": "EVT-000000003-88b224f0",
+            "event_uid": "EVT-000000003-311275fc",
             "ship_id": "SHIP-0003",
             "source_station_id": "STN-MOON-PHOBOS",
-            "destination_station_id": "STN-PLANET-EARTH",
+            "destination_station_id": "STN-PLANET-EARTH-ORB3",
         },
         {
-            "event_uid": "EVT-000000004-b27db193",
+            "event_uid": "EVT-000000004-89eb3061",
             "ship_id": "SHIP-0014",
             "source_station_id": "STN-PLANET-EARTH-ORB1",
-            "destination_station_id": "STN-PLANET-EARTH",
+            "destination_station_id": "STN-MOON-PHOBOS",
         },
         {
-            "event_uid": "EVT-000000005-d6e89c6a",
+            "event_uid": "EVT-000000005-d988d7c6",
             "ship_id": "SHIP-0010",
             "source_station_id": "STN-PLANET-EARTH-ORB1",
             "destination_station_id": "STN-PLANET-MARS-ORB1",
@@ -101,25 +101,25 @@ GOLDEN_BY_PRESET: dict[str, list[dict[str, str]]] = {
             "destination_station_id": "STN-PLANET-EARTH-ORB1",
         },
         {
-            "event_uid": "EVT-000000002-3b095ca6",
+            "event_uid": "EVT-000000002-b4aca4b3",
             "ship_id": "SHIP-0006",
             "source_station_id": "STN-PLANET-MARS-ORB1",
-            "destination_station_id": "STN-PLANET-EARTH-ORB3",
+            "destination_station_id": "STN-PLANET-EARTH",
         },
         {
-            "event_uid": "EVT-000000003-60ef0b2e",
+            "event_uid": "EVT-000000003-a4f05582",
             "ship_id": "SHIP-0010",
             "source_station_id": "STN-PLANET-EARTH-ORB1",
             "destination_station_id": "STN-PLANET-EARTH-ORB3",
         },
         {
-            "event_uid": "EVT-000000004-c3be45ac",
+            "event_uid": "EVT-000000004-d4571b4c",
             "ship_id": "SHIP-0008",
             "source_station_id": "STN-PLANET-EARTH-ORB2",
-            "destination_station_id": "STN-PLANET-MARS-ORB1",
+            "destination_station_id": "STN-PLANET-EARTH-ORB3",
         },
         {
-            "event_uid": "EVT-000000005-d36df8c5",
+            "event_uid": "EVT-000000005-3d8fbae5",
             "ship_id": "SHIP-0014",
             "source_station_id": "STN-PLANET-EARTH-ORB1",
             "destination_station_id": "STN-PLANET-EARTH-ORB2",

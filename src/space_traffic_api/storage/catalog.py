@@ -354,6 +354,13 @@ class CatalogRepository:
                 dst_demand = float(dst_state.get("demand_index", 1.0) or 1.0)
                 demand_relief = magnitude * (0.6 + (rng.random() * 0.4))
                 dst_state["demand_index"] = round(max(0.1, min(5.0, dst_demand - demand_relief)), 4)
+
+                # Arriving cargo eases destination price pressure — a shipment heading
+                # there signals incoming supply, nudging price slightly downward.
+                dst_price = float(dst_state.get("price_index", 1.0) or 1.0)
+                price_ease = magnitude * 0.3 * (0.8 + (rng.random() * 0.4))
+                dst_state["price_index"] = round(max(0.5, min(3.0, dst_price - price_ease)), 4)
+
                 updates.append((json.dumps(dst_state), destination_station_id))
 
             if updates:
