@@ -103,50 +103,109 @@ Real economy with producers at stations, variable prices due to events, distance
 - Tuning controls for adjusting all aspects of economy and behavior (add to api later)
 
 ## Milestone 2.5 Orbital Locations
-Estimated effort: 3-5 sessions
+Estimated effort: 5-8 sessions
 Status: Planned (default-off experimental slice)
 
 ### Goal
-Introduce a rough orbital-position distance model that changes over simulated time and affects distance only at departure-time arrival estimation.
+Introduce rough, deterministic orbital movement where planets/asteroids have tracked positions updated each simulation tick, and departure-time distance uses the current orbital state.
 
 ### Scope Boundaries (Locked)
-- Include rough, deterministic orbital movement approximation (not astronomy-grade).
-- Include departure-time distance sampling only.
+- Include rough, deterministic orbital state per body (not astronomy-grade).
+- Include per-tick orbital state advancement tied to simulated time.
+- Include departure-time distance sampling from current body positions.
 - Exclude in-transit distance recomputation.
 - Exclude rerouting due to mid-flight orbital motion.
 - Exclude NASA-accurate ephemerides and trajectory complexity.
 
 ### Deliverables
-1. Deterministic rough orbital distance modifier
-- Add a simple periodic movement model tied to simulated time and station/body metadata.
-- Produce a bounded distance multiplier applied on top of current baseline distance estimate.
+1. Body orbital state model
+- Add a body-level orbital state representation (for planets/asteroids and inherited station body anchors).
+- Define rough orbital parameters and initial phases from deterministic seed/catalog data.
+- Persist current orbital phase/position in runtime state (or equivalent deterministic tick-state store).
 
-2. Departure-time-only integration
-- Apply the orbital multiplier only when estimating arrival at departure creation time.
+2. Tick-time orbital updates
+- Advance orbital state each simulation tick using simulated elapsed time.
+- Keep advancement deterministic for fixed seed/config/start time.
+- Expose current orbital state in diagnostics/debug snapshot (lightweight view).
+
+3. Departure-time-only distance integration
+- Compute departure distance from source/destination body positions at that tick.
 - Keep transit fixed to that sampled distance/time for the whole trip.
 
-3. Runtime control and safety
+4. Runtime control and safety
 - Add default-off config/runtime knobs with validation and clamping.
 - Keep current behavior unchanged when the feature is disabled.
 
-4. Verification and rollout gate
+5. Verification and rollout gate
 - Add unit/integration tests for bounds and determinism.
+- Add tests for tick-to-tick orbital position advancement and station body-anchor mapping correctness.
 - Add regression test proving no in-flight distance changes after departure.
 - Run A/B comparison (feature off vs on) and record transit/economy behavior deltas.
 
 ### Definition of Done
 - Feature is off by default and can be enabled via existing config/control path.
+- Planets/asteroids have deterministic orbital positions that advance each tick in simulated time.
+- Departure routing/ETA distance uses current orbital state at tick time.
 - For fixed seed + config + simulated start time, results remain deterministic.
 - Arrival estimation uses departure-time sampled distance only (no mid-flight updates).
 - Golden/shadow test impact is understood and either unchanged or intentionally recaptured.
 - Observed behavior shift is meaningful but controlled (no extreme routing instability).
 
 ### Suggested Session Breakdown
-1. Session 1: finalize model shape and constraints; add config/runtime knobs (default off).
-2. Session 2: integrate departure-time orbital multiplier into arrival estimation path.
-3. Session 3: add deterministic/bounds/regression tests; run shadow + golden validation.
-4. Session 4: run A/B analysis and tune multiplier envelope.
-5. Session 5 (buffer): polish docs, roadmap notes, and any golden recapture if needed.
+1. Session 1: define orbital state model (body anchors, phase/period representation) and deterministic initialization.
+2. Session 2: wire per-tick orbital advancement using simulated elapsed time.
+3. Session 3: integrate departure-time distance calculation from current orbital positions.
+4. Session 4: add config/runtime controls and debugging snapshot visibility.
+5. Session 5: add unit/integration/regression coverage (including no in-flight distance updates).
+6. Session 6: run shadow/golden validation and deterministic drift checks.
+7. Session 7: A/B analysis on travel/economy effects; tune constraints.
+8. Session 8 (buffer): docs, cleanup, and any intentional golden recapture.
+
+### Session 1 Technical Design Checklist (Pre-Implementation)
+1. Body Anchor Mapping Contract
+- Define canonical body IDs for all orbital participants (planets, dwarf planets, asteroid belts/clusters used by stations).
+- Define station-to-body anchor rules (including moon stations inheriting parent orbital body where applicable).
+- Add fallback behavior for unknown bodies (deterministic default anchor and warning path).
+
+2. Orbital State Schema
+- Define runtime orbital state shape (for each body): phase, angular_velocity, radius_scale, optional eccentricity_hint.
+- Define unit conventions (phase in radians, velocity in radians/day, simulated-time day basis).
+- Decide where state lives during runtime and how snapshot/debug views expose it.
+
+3. Deterministic Initialization Rules
+- Initialization must be reproducible from deterministic seed + catalog metadata + fixed defaults.
+- No hidden randomness outside seeded RNG path.
+- Reset behavior must recreate identical orbital state for same reset seed/config.
+
+4. Tick Advancement Contract
+- Orbital state updates occur once per simulation tick using elapsed simulated days.
+- Advancement is pure math with no side effects outside orbital state storage.
+- Time-scale and pause/reset semantics are explicitly documented.
+
+5. Distance Sampling Contract
+- Departure-time distance reads source/destination body positions from current orbital state.
+- Distance is sampled once at departure and persisted into ETA calculation.
+- Arrival does not re-query orbital state mid-flight.
+
+6. Config and Guardrails
+- Confirm feature gate remains default-off.
+- Confirm multiplier/scale knobs and bounds for orbital effect remain conservative.
+- Confirm invalid config handling mirrors existing fail-fast startup + runtime clamp behavior.
+
+7. Test Plan (Session 1 Exit Criteria)
+- Unit tests for deterministic initialization of orbital state.
+- Unit tests for station-to-body anchor mapping (including moon/parent-body behavior).
+- Unit tests for tick advancement monotonic phase evolution.
+- Regression test proving reset reproduces identical orbital state for same seed.
+
+8. Design Review Exit Criteria
+- Data model approved (body anchors + orbital state shape).
+- Determinism invariants documented.
+- Integration points for Sessions 2-3 identified in generator/runtime flow.
+- Open questions list reduced to implementation-ready decisions only.
+
+### Engineering Notes
+- See [docs/orbital-scaling-note.md](docs/orbital-scaling-note.md) for performance assumptions, benchmark gates, and dependency escalation thresholds for orbital-state implementation.
 
 ## Milestone 3: Engine Realism and Determinism Depth
 Estimated effort: 10-14 sessions
@@ -185,12 +244,13 @@ Expose richer simulation capabilities through stable, usable API contracts.
 ## Session Estimate Summary
 - Milestone 1: 4-6 sessions
 - Milestone 2: 8-12 sessions
-- Milestone 2.5: 3-5 sessions
+- Milestone 2.5: 5-8 sessions
 - Milestone 3: 10-14 sessions
 - Milestone 4: 7-10 sessions
-- Total roadmap estimate: 32-47 sessions
+- Total roadmap estimate: 34-50 sessions
 
 ## Notes
 - Milestones 2 and 3 can partially overlap after Milestone 1 is complete.
 - Milestone 2.5 is intentionally constrained and should complete before broad Milestone 3 engine changes.
+- Milestone 2.5 requires tracked body orbital state updated each tick; a stateless time-only multiplier is not sufficient for this milestone goal.
 - If throughput is priority, run Milestone 2 scenario work in parallel with Milestone 3 replay/scheduler work.

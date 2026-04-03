@@ -5,6 +5,7 @@ import random
 import sqlite3
 import threading
 import time
+import math
 from collections import deque
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
@@ -760,9 +761,53 @@ class DepartureGenerator(threading.Thread):
 
         src_group = self._distance_groups.get(source, 5)
         dst_group = self._distance_groups.get(destination, 5)
-        hops = abs(src_group - dst_group)
+        base_hops = abs(src_group - dst_group)
+        hops = base_hops * self._orbital_distance_multiplier(departure_time, source, destination)
         hours = (6 + (hops * 8) + self._rng.uniform(0.5, 12.0)) / self._ship_speed_multiplier
         return departure_time + timedelta(hours=hours)
+
+    def _orbital_distance_multiplier(self, departure_time: datetime, source: str, destination: str) -> float:
+        runtime_snap = self._runtime.snapshot()
+        if not runtime_snap.get("orbital_distance_model_enabled"):
+            return 1.0
+
+        try:
+            min_multiplier = float(runtime_snap.get("orbital_distance_multiplier_min", 0.7) or 0.7)
+        except (TypeError, ValueError):
+            min_multiplier = 0.7
+        try:
+            max_multiplier = float(runtime_snap.get("orbital_distance_multiplier_max", 1.3) or 1.3)
+        except (TypeError, ValueError):
+            max_multiplier = 1.3
+
+        min_multiplier = max(0.5, min(1.0, min_multiplier))
+        max_multiplier = max(1.0, min(1.5, max_multiplier))
+        if max_multiplier < min_multiplier:
+            max_multiplier = min_multiplier
+        if max_multiplier == min_multiplier:
+            return min_multiplier
+
+        src_rank = self._station_distance_rank(source)
+        dst_rank = self._station_distance_rank(destination)
+        low = min(src_rank, dst_rank)
+        high = max(src_rank, dst_rank)
+        rank_gap = max(0.0, high - low)
+
+        departure_utc = departure_time.astimezone(UTC) if departure_time.tzinfo else departure_time.replace(tzinfo=UTC)
+        day_index = departure_utc.timestamp() / 86400.0
+        period_days = 40.0 + (rank_gap * 4.0)
+        phase_offset = (low * 0.61) + (high * 1.37)
+        angle = ((day_index / period_days) * (2.0 * math.pi)) + phase_offset
+        normalized = (math.sin(angle) + 1.0) / 2.0
+        return min_multiplier + ((max_multiplier - min_multiplier) * normalized)
+
+    def _station_distance_rank(self, station_id: str) -> float:
+        station = self._station_lookup.get(station_id, {})
+        profile = station.get("economy_profile") if isinstance(station.get("economy_profile"), dict) else {}
+        try:
+            return float(profile.get("distance_rank", self._distance_groups.get(station_id, 5)) or 5)
+        except (TypeError, ValueError):
+            return float(self._distance_groups.get(station_id, 5))
 
     def _apply_faults(self, event: dict[str, Any], state: dict[str, Any]) -> None:
         apply_faults(
