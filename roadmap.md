@@ -75,7 +75,9 @@ Status: In progress
 - Completed chunk 6 tests: env/default validation, PATCH /config clamping, and fixed-magnitude deterministic economy-state checks
 - Completed chunk 7: distance_rank seeded into economy_profile per station body position; fuel_pressure_score now scales with orbital distance; merchant routing applies fuel cost ratio (dest/source fuel pressure) to net effective destination value
 - Completed chunk 7 tests: distance_rank presence + solar position correctness, moon rank inheritance, fuel pressure higher for distant stations, merchant penalizes high-fuel-cost routes
-- Next chunk: add price drift driven by supply/demand imbalance so station price_index converges toward equilibrium and drives more dynamic merchant routing
+- Completed chunk 8: price_index in advance_station_economy now drifts toward demand/supply equilibrium each tick (target = demand/supply, delta = 5% of gap × day_factor × magnitude), clamped [0.5, 3.0]; all 120 tests green
+- Completed chunk 8 tests: price rises when demand > supply, price falls when supply > demand, stable at equilibrium, deterministic with seeded RNG
+- Next chunk: add price_index to local_value_score derivation so merchants explicitly factor current station prices into routing decisions
 
 ### Goal
 Real economy with producers at stations, variable prices due to events, distance from materials, or station needs.

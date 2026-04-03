@@ -270,6 +270,7 @@ class CatalogRepository:
 
                 supply_index = float(state.get("supply_index", 1.0) or 1.0)
                 demand_index = float(state.get("demand_index", 1.0) or 1.0)
+                price_index = float(state.get("price_index", 1.0) or 1.0)
 
                 noise_supply = (rng.random() - 0.5) * 0.01
                 noise_demand = (rng.random() - 0.5) * 0.01
@@ -280,8 +281,15 @@ class CatalogRepository:
                 demand_delta += scarcity_pressure * 0.02 * day_factor
                 demand_delta += noise_demand
 
+                # Price converges toward demand/supply equilibrium: if demand
+                # exceeds supply price rises slowly and vice-versa.
+                safe_supply = max(0.01, supply_index)
+                target_price = demand_index / safe_supply
+                price_delta = (target_price - price_index) * 0.05 * day_factor * magnitude
+
                 state["supply_index"] = round(max(0.1, min(5.0, supply_index + supply_delta)), 4)
                 state["demand_index"] = round(max(0.1, min(5.0, demand_index + demand_delta)), 4)
+                state["price_index"] = round(max(0.5, min(3.0, price_index + price_delta)), 4)
 
                 updates.append((json.dumps(state), station_id))
 

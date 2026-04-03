@@ -241,3 +241,146 @@ def test_economy_magnitude_controls_are_deterministic_with_seeded_rng():
         finally:
             s1.close()
             s2.close()
+
+
+def test_price_index_drifts_toward_demand_over_supply_equilibrium():
+    with TemporaryDirectory() as tmp:
+        db_path = os.path.join(tmp, "test.db")
+        store = SQLiteStore(db_path)
+        store.init_schema()
+
+        station = {
+            "id": "STN-TEST-HIGHDEMAND",
+            "name": "Test High Demand",
+            "body_name": "Test",
+            "body_type": "planet",
+            "parent_body": "Test",
+            "cargo_type": "fuel",
+            "allowed_size_classes": ["medium"],
+            "economy_profile": {
+                "producer_rate": 0.05,
+                "consumer_rate": 0.08,
+                "manufacturing_material_demand": 0.5,
+                "distance_rank": 3,
+            },
+            "economy_state": {
+                "primary_good": "fuel",
+                "supply_index": 0.6,
+                "demand_index": 1.8,
+                "price_index": 1.0,
+                "fuel_price_index": 1.0,
+            },
+        }
+        store.seed_stations([station])
+        try:
+            store.advance_station_economy(elapsed_days=30.0, rng=random.Random(100), magnitude=1.0)
+            rows, _ = store.list_stations(limit=10)
+            row = rows[0]
+            new_price = float(row["economy_state"]["price_index"])
+            assert new_price > 1.0, f"price_index should have risen but got {new_price}"
+        finally:
+            store.close()
+
+
+def test_price_index_falls_when_supply_exceeds_demand():
+    with TemporaryDirectory() as tmp:
+        db_path = os.path.join(tmp, "test.db")
+        store = SQLiteStore(db_path)
+        store.init_schema()
+
+        station = {
+            "id": "STN-TEST-OVERSUPPLY",
+            "name": "Test Oversupply",
+            "body_name": "Test",
+            "body_type": "planet",
+            "parent_body": "Test",
+            "cargo_type": "ore",
+            "allowed_size_classes": ["medium"],
+            "economy_profile": {
+                "producer_rate": 0.08,
+                "consumer_rate": 0.04,
+                "manufacturing_material_demand": 0.3,
+                "distance_rank": 3,
+            },
+            "economy_state": {
+                "primary_good": "ore",
+                "supply_index": 2.0,
+                "demand_index": 0.8,
+                "price_index": 1.0,
+                "fuel_price_index": 1.0,
+            },
+        }
+        store.seed_stations([station])
+        try:
+            store.advance_station_economy(elapsed_days=30.0, rng=random.Random(200), magnitude=1.0)
+            rows, _ = store.list_stations(limit=10)
+            row = rows[0]
+            new_price = float(row["economy_state"]["price_index"])
+            assert new_price < 1.0, f"price_index should have fallen but got {new_price}"
+        finally:
+            store.close()
+
+
+def test_price_index_stable_when_supply_equals_demand():
+    with TemporaryDirectory() as tmp:
+        db_path = os.path.join(tmp, "test.db")
+        store = SQLiteStore(db_path)
+        store.init_schema()
+
+        station = {
+            "id": "STN-TEST-BALANCED",
+            "name": "Test Balanced",
+            "body_name": "Test",
+            "body_type": "planet",
+            "parent_body": "Test",
+            "cargo_type": "water",
+            "allowed_size_classes": ["medium"],
+            "economy_profile": {
+                "producer_rate": 0.06,
+                "consumer_rate": 0.06,
+                "manufacturing_material_demand": 0.5,
+                "distance_rank": 3,
+            },
+            "economy_state": {
+                "primary_good": "water",
+                "supply_index": 1.0,
+                "demand_index": 1.0,
+                "price_index": 1.0,
+                "fuel_price_index": 1.0,
+            },
+        }
+        store.seed_stations([station])
+        try:
+            store.advance_station_economy(elapsed_days=60.0, rng=random.Random(300), magnitude=1.0)
+            rows, _ = store.list_stations(limit=10)
+            row = rows[0]
+            new_price = float(row["economy_state"]["price_index"])
+            assert 0.8 <= new_price <= 1.2, f"price_index strayed too far: {new_price}"
+        finally:
+            store.close()
+
+
+def test_price_index_drift_is_deterministic_with_seeded_rng():
+    with TemporaryDirectory() as tmp1, TemporaryDirectory() as tmp2:
+        stations = build_stations()
+        db1 = os.path.join(tmp1, "test1.db")
+        db2 = os.path.join(tmp2, "test2.db")
+        s1 = SQLiteStore(db1)
+        s2 = SQLiteStore(db2)
+        s1.init_schema()
+        s2.init_schema()
+        s1.seed_stations(stations)
+        s2.seed_stations(stations)
+        try:
+            s1.advance_station_economy(elapsed_days=5.0, rng=random.Random(4321), magnitude=1.0)
+            s2.advance_station_economy(elapsed_days=5.0, rng=random.Random(4321), magnitude=1.0)
+
+            rows1, _ = s1.list_stations(limit=5000, order_by="id", order="asc")
+            rows2, _ = s2.list_stations(limit=5000, order_by="id", order="asc")
+
+            prices1 = {row["id"]: row["economy_state"].get("price_index") for row in rows1}
+            prices2 = {row["id"]: row["economy_state"].get("price_index") for row in rows2}
+            assert prices1 == prices2
+        finally:
+            s1.close()
+            s2.close()
