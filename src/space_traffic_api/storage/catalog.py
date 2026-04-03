@@ -283,6 +283,69 @@ class CatalogRepository:
 
             return len(updates)
 
+    def apply_departure_economy_impact(
+        self,
+        source_station_id: str,
+        destination_station_id: str,
+        rng: random.Random | None = None,
+        magnitude: float = 0.012,
+    ) -> int:
+        if not source_station_id or not destination_station_id:
+            return 0
+
+        rng = rng or random.Random()
+        magnitude = max(0.001, min(0.2, float(magnitude)))
+
+        with self._context.lock:
+            ids = [source_station_id]
+            if destination_station_id != source_station_id:
+                ids.append(destination_station_id)
+
+            placeholders = ",".join("?" for _ in ids)
+            rows = self._context.conn.execute(
+                f"SELECT id, economy_state FROM stations WHERE id IN ({placeholders})",
+                ids,
+            ).fetchall()
+
+            if not rows:
+                return 0
+
+            by_id = {str(row["id"]): row for row in rows}
+            updates: list[tuple[str, str]] = []
+
+            src_row = by_id.get(source_station_id)
+            if src_row:
+                try:
+                    src_state = json.loads(src_row["economy_state"]) if src_row["economy_state"] else {}
+                except json.JSONDecodeError:
+                    src_state = {}
+
+                src_supply = float(src_state.get("supply_index", 1.0) or 1.0)
+                supply_drop = magnitude * (0.8 + (rng.random() * 0.4))
+                src_state["supply_index"] = round(max(0.1, min(5.0, src_supply - supply_drop)), 4)
+                updates.append((json.dumps(src_state), source_station_id))
+
+            dst_row = by_id.get(destination_station_id)
+            if dst_row:
+                try:
+                    dst_state = json.loads(dst_row["economy_state"]) if dst_row["economy_state"] else {}
+                except json.JSONDecodeError:
+                    dst_state = {}
+
+                dst_demand = float(dst_state.get("demand_index", 1.0) or 1.0)
+                demand_relief = magnitude * (0.6 + (rng.random() * 0.4))
+                dst_state["demand_index"] = round(max(0.1, min(5.0, dst_demand - demand_relief)), 4)
+                updates.append((json.dumps(dst_state), destination_station_id))
+
+            if updates:
+                self._context.conn.executemany(
+                    "UPDATE stations SET economy_state = ? WHERE id = ?",
+                    updates,
+                )
+                self._context.conn.commit()
+
+            return len(updates)
+
     def get_ship_stats_by_faction(self) -> dict[str, int]:
         """Return ship count grouped by faction."""
         with self._context.lock:

@@ -67,7 +67,9 @@ Status: In progress
 - Completed chunk 2 tests: bounds checks and deterministic stability across app boots
 - Completed chunk 3: producer_rate/consumer_rate station profile fields plus lightweight tick update for supply/demand indexes
 - Completed chunk 3 tests: supply/demand drift bounds and deterministic repeatability with seeded RNG
-- Next chunk: connect departure events to station economy state (source supply down, destination demand eased) with small deterministic adjustments
+- Completed chunk 4: departure-linked economy impacts (source supply down, destination demand eased) with bounded deterministic adjustments
+- Completed chunk 4 tests: event-impact bounds and deterministic repeatability with seeded RNG
+- Next chunk: begin feeding economy_derived value signals into merchant destination preference with a low-impact weighting
 
 ### Goal
 Real economy with producers at stations, variable prices due to events, distance from materials, or station needs.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import queue
 import random
+import sqlite3
 import threading
 import time
 from collections import deque
@@ -137,25 +138,29 @@ class DepartureGenerator(threading.Thread):
             wait_seconds = interval_seconds / simulation_time_scale
             tick_time = self._current_tick_time(state)
 
-            result = self._engine.tick(
-                state=state,
-                scenario=scenario,
-                tick_time=tick_time,
-                interval_seconds=interval_seconds,
-                wait_seconds=wait_seconds,
-                startup_merchants_launched=self._startup_merchants_launched,
-                launch_startup_merchants=self._launch_all_merchants_at_startup,
-                complete_arrivals=lambda t: self._store.complete_ship_arrivals_with_details(
-                    t.isoformat(), now_iso=t.isoformat()
-                ),
-                apply_lifecycle=self._apply_lifecycle,
-                is_globally_interrupted=self._is_globally_interrupted,
-                build_event=self._build_event,
-                apply_faults=self._apply_faults,
-                delayed_insert_pause=lambda _event: self._stop_event.wait(timeout=1.5),
-                persist_and_publish_event=self._persist_and_publish_event,
-                advance_sim_time=self._advance_sim_time,
-            )
+            try:
+                result = self._engine.tick(
+                    state=state,
+                    scenario=scenario,
+                    tick_time=tick_time,
+                    interval_seconds=interval_seconds,
+                    wait_seconds=wait_seconds,
+                    startup_merchants_launched=self._startup_merchants_launched,
+                    launch_startup_merchants=self._launch_all_merchants_at_startup,
+                    complete_arrivals=lambda t: self._store.complete_ship_arrivals_with_details(
+                        t.isoformat(), now_iso=t.isoformat()
+                    ),
+                    apply_lifecycle=self._apply_lifecycle,
+                    is_globally_interrupted=self._is_globally_interrupted,
+                    build_event=self._build_event,
+                    apply_faults=self._apply_faults,
+                    delayed_insert_pause=lambda _event: self._stop_event.wait(timeout=1.5),
+                    persist_and_publish_event=self._persist_and_publish_event,
+                    advance_sim_time=self._advance_sim_time,
+                )
+            except sqlite3.ProgrammingError:
+                self._stop_event.set()
+                break
 
             self._startup_merchants_launched = result.startup_merchants_launched
             tick_latency_ms = (time.perf_counter() - tick_started) * 1000.0
@@ -580,14 +585,32 @@ class DepartureGenerator(threading.Thread):
             self._persist_and_publish_event(event, state)
 
     def _persist_and_publish_event(self, event: dict[str, Any], state: dict[str, Any]) -> None:
-        row_id = self._store.insert_departure(event)
+        try:
+            row_id = self._store.insert_departure(event)
+        except sqlite3.ProgrammingError:
+            # Application shutdown can close the DB while the generator thread is finishing a tick.
+            self._stop_event.set()
+            return
         event["id"] = row_id
-        self._store.trim_departures(state["retention_max_rows"])
+        try:
+            self._store.apply_departure_economy_impact(
+                source_station_id=str(event.get("source_station_id") or ""),
+                destination_station_id=str(event.get("destination_station_id") or ""),
+                rng=self._rng,
+            )
+            self._store.trim_departures(state["retention_max_rows"])
+        except sqlite3.ProgrammingError:
+            self._stop_event.set()
+            return
 
         now_monotonic = time.monotonic()
         if now_monotonic >= self._next_db_size_check_at:
             db_max_size_mb = int(state.get("db_max_size_mb", 512))
-            self._store.enforce_db_size_limit(max_db_size_bytes=db_max_size_mb * 1024 * 1024)
+            try:
+                self._store.enforce_db_size_limit(max_db_size_bytes=db_max_size_mb * 1024 * 1024)
+            except sqlite3.ProgrammingError:
+                self._stop_event.set()
+                return
             self._next_db_size_check_at = now_monotonic + 5.0
 
         self._publish_event(event)

@@ -105,3 +105,75 @@ def test_advance_station_economy_is_deterministic_with_seeded_rng():
         finally:
             s1.close()
             s2.close()
+
+
+def test_apply_departure_economy_impact_updates_source_and_destination_indexes():
+    with TemporaryDirectory() as tmp:
+        db_path = os.path.join(tmp, "test.db")
+        store = SQLiteStore(db_path)
+        store.init_schema()
+        store.seed_stations(build_stations())
+        try:
+            rows_before, _ = store.list_stations(limit=5000, order_by="id", order="asc")
+            by_id_before = {row["id"]: row for row in rows_before}
+
+            source_id = "STN-PLANET-EARTH"
+            destination_id = "STN-PLANET-MARS"
+            src_before_supply = float(by_id_before[source_id]["economy_state"]["supply_index"])
+            dst_before_demand = float(by_id_before[destination_id]["economy_state"]["demand_index"])
+
+            updates = store.apply_departure_economy_impact(
+                source_station_id=source_id,
+                destination_station_id=destination_id,
+                rng=random.Random(2026),
+            )
+            assert updates == 2
+
+            rows_after, _ = store.list_stations(limit=5000, order_by="id", order="asc")
+            by_id_after = {row["id"]: row for row in rows_after}
+            src_after_supply = float(by_id_after[source_id]["economy_state"]["supply_index"])
+            dst_after_demand = float(by_id_after[destination_id]["economy_state"]["demand_index"])
+
+            assert src_after_supply < src_before_supply
+            assert dst_after_demand < dst_before_demand
+            assert 0.1 <= src_after_supply <= 5.0
+            assert 0.1 <= dst_after_demand <= 5.0
+        finally:
+            store.close()
+
+
+def test_apply_departure_economy_impact_is_deterministic_with_seeded_rng():
+    with TemporaryDirectory() as tmp1, TemporaryDirectory() as tmp2:
+        stations = build_stations()
+
+        db1 = os.path.join(tmp1, "test1.db")
+        db2 = os.path.join(tmp2, "test2.db")
+
+        s1 = SQLiteStore(db1)
+        s2 = SQLiteStore(db2)
+        s1.init_schema()
+        s2.init_schema()
+        s1.seed_stations(stations)
+        s2.seed_stations(stations)
+        try:
+            s1.apply_departure_economy_impact(
+                source_station_id="STN-PLANET-EARTH",
+                destination_station_id="STN-PLANET-MARS",
+                rng=random.Random(99),
+            )
+            s2.apply_departure_economy_impact(
+                source_station_id="STN-PLANET-EARTH",
+                destination_station_id="STN-PLANET-MARS",
+                rng=random.Random(99),
+            )
+
+            rows1, _ = s1.list_stations(limit=5000, order_by="id", order="asc")
+            rows2, _ = s2.list_stations(limit=5000, order_by="id", order="asc")
+
+            state1 = {row["id"]: row.get("economy_state", {}) for row in rows1}
+            state2 = {row["id"]: row.get("economy_state", {}) for row in rows2}
+
+            assert state1 == state2
+        finally:
+            s1.close()
+            s2.close()

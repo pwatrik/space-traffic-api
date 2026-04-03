@@ -315,6 +315,20 @@ class SQLiteStore:
     def advance_station_economy(self, elapsed_days: float, rng: random.Random | None = None) -> int:
         return self.catalog.advance_station_economy(elapsed_days=elapsed_days, rng=rng)
 
+    def apply_departure_economy_impact(
+        self,
+        source_station_id: str,
+        destination_station_id: str,
+        rng: random.Random | None = None,
+        magnitude: float = 0.012,
+    ) -> int:
+        return self.catalog.apply_departure_economy_impact(
+            source_station_id=source_station_id,
+            destination_station_id=destination_station_id,
+            rng=rng,
+            magnitude=magnitude,
+        )
+
     def set_control_state(self, state_key: str, payload: dict[str, Any]) -> None:
         self.control.set_state(state_key=state_key, payload=payload)
 
