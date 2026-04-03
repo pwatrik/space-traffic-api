@@ -5,6 +5,7 @@ import random
 import sqlite3
 import threading
 import time
+import math
 from collections import deque
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
@@ -779,11 +780,61 @@ class DepartureGenerator(threading.Thread):
         if self._rng is None:
             self._ensure_rng(self._runtime.snapshot())
 
+        runtime_snap = self._runtime.snapshot()
         src_group = self._distance_groups.get(source, 5)
         dst_group = self._distance_groups.get(destination, 5)
-        hops = abs(src_group - dst_group)
+        base_hops = abs(src_group - dst_group)
+        hops = self._departure_hops_with_orbital_state(
+            source_station_id=source,
+            destination_station_id=destination,
+            base_hops=float(base_hops),
+            runtime_snap=runtime_snap,
+        )
         hours = (6 + (hops * 8) + self._rng.uniform(0.5, 12.0)) / self._ship_speed_multiplier
         return departure_time + timedelta(hours=hours)
+
+    def _departure_hops_with_orbital_state(
+        self,
+        source_station_id: str,
+        destination_station_id: str,
+        base_hops: float,
+        runtime_snap: dict[str, Any],
+    ) -> float:
+        if not runtime_snap.get("orbital_distance_model_enabled"):
+            return base_hops
+
+        try:
+            min_multiplier = float(runtime_snap.get("orbital_distance_multiplier_min", 0.7) or 0.7)
+        except (TypeError, ValueError):
+            min_multiplier = 0.7
+        try:
+            max_multiplier = float(runtime_snap.get("orbital_distance_multiplier_max", 1.3) or 1.3)
+        except (TypeError, ValueError):
+            max_multiplier = 1.3
+
+        min_multiplier = max(0.5, min(1.0, min_multiplier))
+        max_multiplier = max(1.0, min(1.5, max_multiplier))
+        if max_multiplier < min_multiplier:
+            max_multiplier = min_multiplier
+
+        src_anchor = self._station_orbital_anchor.get(source_station_id)
+        dst_anchor = self._station_orbital_anchor.get(destination_station_id)
+        if not src_anchor or not dst_anchor:
+            return base_hops
+
+        src_state = self._orbital_state.get(src_anchor)
+        dst_state = self._orbital_state.get(dst_anchor)
+        if not src_state or not dst_state:
+            return base_hops
+
+        radial_distance = math.hypot(dst_state.x - src_state.x, dst_state.y - src_state.y)
+        min_distance = abs(src_state.radius_scale - dst_state.radius_scale)
+        max_distance = src_state.radius_scale + dst_state.radius_scale
+        spread = max(0.001, max_distance - min_distance)
+        normalized_distance = max(0.0, min(1.0, (radial_distance - min_distance) / spread))
+        multiplier = min_multiplier + ((max_multiplier - min_multiplier) * normalized_distance)
+
+        return base_hops * multiplier
 
     def _apply_faults(self, event: dict[str, Any], state: dict[str, Any]) -> None:
         apply_faults(
