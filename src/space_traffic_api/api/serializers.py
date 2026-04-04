@@ -61,3 +61,24 @@ def serialize_control_event(row: dict[str, Any]) -> dict[str, Any]:
         "action": row["action"],
         "payload": payload,
     }
+
+
+def serialize_ship_state(row: dict[str, Any]) -> dict[str, Any]:
+    """Serialize a ship state row with explicit wall-clock and simulation-time fields."""
+    return {
+        "ship_id": row["ship_id"],
+        "name": row.get("name"),
+        "faction": row.get("faction"),
+        "ship_type": row.get("ship_type"),
+        "home_station_id": row.get("home_station_id"),
+        "status": row["status"],
+        "current_station_id": row.get("current_station_id"),
+        "in_transit": row["in_transit"],
+        "source_station_id": row.get("source_station_id"),
+        "destination_station_id": row.get("destination_station_id"),
+        "departure_time": row.get("departure_time"),
+        "est_arrival_time": row.get("est_arrival_time"),
+        "ship_age_days": row["ship_age_days"],
+        "updated_at": row["updated_at"],
+        "observed_at": row.get("observed_at") or row.get("updated_at"),
+    }

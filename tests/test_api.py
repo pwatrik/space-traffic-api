@@ -27,6 +27,12 @@ def test_healthz_and_public_endpoints():
             station_ids = {station["id"] for station in payload["stations"]}
             assert "STN-PLANET-PLUTO" in station_ids
             assert "STN-MOON-CHARON" in station_ids
+
+            ship_states = client.get("/ships/state?limit=1")
+            assert ship_states.status_code == 200
+            ships_payload = ship_states.get_json()
+            assert ships_payload["count"] == 1
+            assert ships_payload["ships"][0].get("observed_at")
         finally:
             app.config["space_store"].close()
 

@@ -138,7 +138,11 @@ components:
 
     ShipState:
       type: object
-      required: [ship_id, status, in_transit, ship_age_days, updated_at]
+      required: [ship_id, status, in_transit, ship_age_days, updated_at, observed_at]
+      description: |
+        Time semantics:
+        - `observed_at` is wall-clock time when this state row was last persisted by the server.
+        - `updated_at`, `departure_time`, and `est_arrival_time` are simulation-time values.
       properties:
         ship_id:
           type: string
@@ -169,6 +173,9 @@ components:
           format: float
           example: 1482.5
         updated_at:
+          type: string
+          format: date-time
+        observed_at:
           type: string
           format: date-time
 

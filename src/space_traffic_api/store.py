@@ -60,6 +60,7 @@ class SQLiteStore:
                     departure_time TEXT,
                     est_arrival_time TEXT,
                     updated_at TEXT NOT NULL,
+                    observed_at TEXT NOT NULL,
                     FOREIGN KEY(ship_id) REFERENCES ships(id)
                 );
 
@@ -113,7 +114,15 @@ class SQLiteStore:
             self._ensure_column("ships", "crew", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column("ships", "passengers", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column("ship_state", "ship_age_days", "REAL NOT NULL DEFAULT 0")
+            self._ensure_column("ship_state", "observed_at", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column("control_events", "created_at", "TEXT NOT NULL DEFAULT ''")
+            self._context.conn.execute(
+                """
+                UPDATE ship_state
+                SET observed_at = updated_at
+                WHERE observed_at IS NULL OR observed_at = ''
+                """
+            )
             self._context.conn.execute(
                 """
                 UPDATE control_events

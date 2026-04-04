@@ -84,6 +84,7 @@ def test_create_app_migrates_legacy_schema_columns(monkeypatch):
             assert state_resp.status_code == 200
             ship_state = state_resp.get_json()["ships"][0]
             assert "ship_age_days" in ship_state
+            assert "observed_at" in ship_state
 
             stations_cols = _column_names(db_path, "stations")
             ships_cols = _column_names(db_path, "ships")
@@ -97,6 +98,7 @@ def test_create_app_migrates_legacy_schema_columns(monkeypatch):
             assert "crew" in ships_cols
             assert "passengers" in ships_cols
             assert "ship_age_days" in ship_state_cols
+            assert "observed_at" in ship_state_cols
         finally:
             app.config["space_store"].close()
 

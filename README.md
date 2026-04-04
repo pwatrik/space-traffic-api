@@ -51,6 +51,7 @@ Current implementation note:
 
 - Simulation currently exposes `simulation_now` and uses simulated timestamps for in-universe event fields.
 - API departure and control-event payloads now include `observed_at` as explicit wall-clock time, while `departure_time`, `est_arrival_time`, and `event_time` remain simulation-time fields.
+- API ship-state payloads now include wall-clock `observed_at`; ship-state `updated_at`, `departure_time`, and `est_arrival_time` are simulation-time fields.
 
 ## CI Policy
 

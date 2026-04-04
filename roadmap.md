@@ -165,7 +165,7 @@ Status: In progress
 - Implemented: Session 2 initial slice (generator sim-time advancement now derives from measured wall elapsed × simulation_time_scale instead of rate-derived tick interval; departure pacing remains rate-driven).
 - Implemented: Session 3 initial slice (default simulation epoch moved to 2100-01-01T00:00:00Z, default simulation_time_scale set to 1500x, and startup/reset sim-time anchoring decoupled from deterministic RNG mode).
 - Implemented: Session 4 initial slice (ETA now uses calibrated distance-driven travel duration from deterministic pseudo-orbital body positions; Earth↔Mars shortest samples are day-scale and Neptune↔Pluto far samples are multi-month scale).
-- Implemented: Session 5 initial slice (API/storage time contract split now exposes wall-clock `observed_at` for departures and control events while retaining simulation-time fields for in-universe timing).
+- Implemented: Session 5 initial slice (API/storage time contract split now exposes wall-clock `observed_at` for departures, control events, and ship-state rows while retaining simulation-time fields for in-universe timing).
 
 ### Goal
 Introduce a dedicated simulation clock and a clean wall-clock vs simulated-time contract so long-haul travel, orbital movement, economy, and timed events all advance on the same compressed simulation timeline.
