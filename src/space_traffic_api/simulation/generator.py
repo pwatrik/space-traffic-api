@@ -5,6 +5,8 @@ import random
 import sqlite3
 import threading
 import time
+import hashlib
+import math
 from collections import deque
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
@@ -24,6 +26,25 @@ from .policies.pirate import apply_pirate_activity_policy
 from .policies.war import apply_war_impact_policy
 from .runtime import RuntimeState
 from .scenarios import SCENARIO_DEFINITIONS
+
+
+# Approximate heliocentric orbital radii used for first-pass travel-time calibration.
+_BODY_ORBIT_RADIUS_AU: dict[str, float] = {
+    "Mercury": 0.39,
+    "Venus": 0.72,
+    "Earth": 1.00,
+    "Mars": 1.52,
+    "Jupiter": 5.20,
+    "Saturn": 9.58,
+    "Uranus": 19.20,
+    "Neptune": 30.07,
+    "Pluto": 39.48,
+    "Asteroid Belt": 2.80,
+}
+
+# Calibrated so Earth<->Mars closest is ~3-4 days and Neptune<->Pluto furthest is ~180 days.
+_TRAVEL_DAYS_SCALE = 6.2
+_TRAVEL_DAYS_EXPONENT = 0.79
 
 
 class DepartureGenerator(threading.Thread):
@@ -49,6 +70,11 @@ class DepartureGenerator(threading.Thread):
         self._catalog = catalog or {}
         self._lifecycle = self._catalog.get("lifecycle", {})
         self._ship_generation = self._catalog.get("ship_generation", {})
+        self._celestial_distance_order = (
+            self._catalog.get("celestial", {}).get("distance_order", {})
+            if isinstance(self._catalog.get("celestial", {}), dict)
+            else {}
+        )
         defaults = self._ship_generation.get("defaults") or {}
         raw_speed_multiplier = defaults.get("ship_speed_multiplier", 84.0)
         if isinstance(raw_speed_multiplier, (int, float)) and float(raw_speed_multiplier) > 0:
@@ -57,6 +83,11 @@ class DepartureGenerator(threading.Thread):
             self._ship_speed_multiplier = 84.0
 
         self._naming = load_naming_config()
+        self._station_anchor_body = {
+            str(station["id"]): self._anchor_body_for_station(station)
+            for station in stations
+            if station.get("id")
+        }
 
         self._rng: random.Random | None = None
         self._sim_time: datetime | None = None
@@ -766,11 +797,81 @@ class DepartureGenerator(threading.Thread):
         if self._rng is None:
             self._ensure_rng(self._runtime.snapshot())
 
-        src_group = self._distance_groups.get(source, 5)
-        dst_group = self._distance_groups.get(destination, 5)
-        hops = abs(src_group - dst_group)
-        hours = (6 + (hops * 8) + self._rng.uniform(0.5, 12.0)) / self._ship_speed_multiplier
-        return departure_time + timedelta(hours=hours)
+        src_anchor = self._station_anchor_body.get(source)
+        dst_anchor = self._station_anchor_body.get(destination)
+
+        distance_au = self._distance_au_at_departure(
+            departure_time=departure_time,
+            source_station_id=source,
+            destination_station_id=destination,
+            source_anchor=src_anchor,
+            destination_anchor=dst_anchor,
+        )
+        jitter = 0.92 + self._rng.uniform(0.0, 0.16)
+        sim_days = max(0.5, (_TRAVEL_DAYS_SCALE * (distance_au ** _TRAVEL_DAYS_EXPONENT)) * jitter)
+        return departure_time + timedelta(days=sim_days)
+
+    def _anchor_body_for_station(self, station: dict[str, Any]) -> str:
+        body_type = str(station.get("body_type") or "").strip().lower()
+        body_name = str(station.get("body_name") or "").strip()
+        parent_body = str(station.get("parent_body") or "").strip()
+        if body_type == "moon" and parent_body:
+            return parent_body
+        if body_name:
+            return body_name
+        if parent_body:
+            return parent_body
+        return ""
+
+    def _distance_au_at_departure(
+        self,
+        departure_time: datetime,
+        source_station_id: str,
+        destination_station_id: str,
+        source_anchor: str | None,
+        destination_anchor: str | None,
+    ) -> float:
+        if source_anchor and destination_anchor:
+            src_pos = self._body_position_au(source_anchor, departure_time)
+            dst_pos = self._body_position_au(destination_anchor, departure_time)
+            if src_pos is not None and dst_pos is not None:
+                raw_distance = max(0.05, math.hypot(dst_pos[0] - src_pos[0], dst_pos[1] - src_pos[1]))
+                src_radius = self._orbit_radius_au(source_anchor)
+                dst_radius = self._orbit_radius_au(destination_anchor)
+                if src_radius > 0 and dst_radius > 0:
+                    farthest_distance = src_radius + dst_radius
+                    outer_bias = min(0.92, (src_radius + dst_radius) / 75.0)
+                    return raw_distance + ((farthest_distance - raw_distance) * outer_bias)
+                return raw_distance
+
+        src_rank = self._distance_groups.get(source_station_id, 5)
+        dst_rank = self._distance_groups.get(destination_station_id, 5)
+        fallback = max(0.5, float(abs(src_rank - dst_rank) + 1))
+        return fallback
+
+    def _body_position_au(self, body: str, departure_time: datetime) -> tuple[float, float] | None:
+        radius = self._orbit_radius_au(body)
+        if radius <= 0:
+            return None
+        orbital_period_days = max(30.0, 365.25 * (radius ** 1.5))
+        day_number = departure_time.timestamp() / 86400.0
+        initial_phase = self._body_phase_seeded(body)
+        phase = (initial_phase + ((day_number / orbital_period_days) * math.tau)) % math.tau
+        return (math.cos(phase) * radius, math.sin(phase) * radius)
+
+    def _orbit_radius_au(self, body: str) -> float:
+        if body in _BODY_ORBIT_RADIUS_AU:
+            return _BODY_ORBIT_RADIUS_AU[body]
+        rank = self._celestial_distance_order.get(body)
+        if isinstance(rank, int) and rank > 0:
+            return max(0.4, float(rank) * 1.35)
+        return 0.0
+
+    def _body_phase_seeded(self, body: str) -> float:
+        seed = int(self._runtime.snapshot().get("deterministic_seed", 424242) or 424242)
+        digest = hashlib.sha256(f"{seed}:{body}:phase".encode("utf-8")).digest()
+        numerator = int.from_bytes(digest[:8], "big")
+        return (numerator / float((1 << 64) - 1)) * math.tau
 
     def _apply_faults(self, event: dict[str, Any], state: dict[str, Any]) -> None:
         apply_faults(
