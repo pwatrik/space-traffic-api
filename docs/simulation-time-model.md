@@ -68,7 +68,7 @@ For timing-sensitive payloads, expose both domains explicitly.
 
 - Simulated time exists as `simulation_now` and drives most simulation logic.
 - Simulated time progression is currently coupled to departure-generator cadence.
-- Startup epoch default is still `2150-01-01T00:00:00Z` in config.
+- Startup epoch default is now `2100-01-01T00:00:00Z` in config.
 - ETA estimation still uses a hop-based heuristic and does not satisfy long-route targets.
 - API currently mixes time semantics; wall-clock timestamps are not explicit on all event surfaces.
 

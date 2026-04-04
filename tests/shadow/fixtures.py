@@ -94,7 +94,7 @@ CATALOG_PRESETS: dict[str, dict[str, Any]] = {
 
 
 # Shared harness defaults to keep slow-test behavior stable across machines.
-SHADOW_DEFAULT_START_TIME = "2150-01-01T00:00:00Z"
+SHADOW_DEFAULT_START_TIME = "2100-01-01T00:00:00Z"
 SHADOW_DEFAULT_TIMEOUT_SECONDS = 12.0
 SHADOW_DEFAULT_POLL_INTERVAL_SECONDS = 0.05
 

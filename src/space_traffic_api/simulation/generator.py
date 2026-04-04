@@ -215,16 +215,11 @@ class DepartureGenerator(threading.Thread):
             self._startup_merchants_launched = False
 
     def _set_sim_time(self, state: dict[str, Any]) -> None:
-        if state.get("deterministic_mode"):
-            raw = state.get("deterministic_start_time", "2150-01-01T00:00:00Z")
-            try:
-                self._sim_time = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-            except ValueError:
-                self._sim_time = datetime.now(UTC)
-            self._runtime.set_simulation_now(self._sim_time.isoformat())
-            return
-
-        self._sim_time = datetime.now(UTC)
+        raw = state.get("deterministic_start_time", "2100-01-01T00:00:00Z")
+        try:
+            self._sim_time = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            self._sim_time = datetime.now(UTC)
         self._runtime.set_simulation_now(self._sim_time.isoformat())
 
     def _effective_rate_bounds(

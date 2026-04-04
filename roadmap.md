@@ -163,6 +163,7 @@ Status: Planned
 ### Progress
 - Completed: Session 1 (simulation-time contract formalized, naming clarified, and API timing semantics documented in docs/simulation-time-model.md).
 - Implemented: Session 2 initial slice (generator sim-time advancement now derives from measured wall elapsed × simulation_time_scale instead of rate-derived tick interval; departure pacing remains rate-driven).
+- Implemented: Session 3 initial slice (default simulation epoch moved to 2100-01-01T00:00:00Z, default simulation_time_scale set to 1500x, and startup/reset sim-time anchoring decoupled from deterministic RNG mode).
 
 ### Goal
 Introduce a dedicated simulation clock and a clean wall-clock vs simulated-time contract so long-haul travel, orbital movement, economy, and timed events all advance on the same compressed simulation timeline.

@@ -43,7 +43,7 @@ class RuntimeState:
             "economy_preference_weight": config.economy_preference_weight,
             "economy_drift_magnitude": config.economy_drift_magnitude,
             "economy_departure_impact_magnitude": config.economy_departure_impact_magnitude,
-            "simulation_now": _parse_deterministic_start(config.deterministic_start_time).isoformat() if config.deterministic_mode else datetime.now(UTC).isoformat(),
+            "simulation_now": _parse_deterministic_start(config.deterministic_start_time).isoformat(),
             "active_scenario": None,
             "active_faults": {},
                        "pirate_spawn_probability_per_day": None,
@@ -299,12 +299,9 @@ class RuntimeState:
                     "next_spawn_earliest_at": None,
                     "affected_station_ids": [],
                 }
-            if self._state.get("deterministic_mode"):
-                deterministic_start = self._state.get("deterministic_start_time")
-                simulation_now_dt = _parse_deterministic_start(deterministic_start)
-                self._state["simulation_now"] = simulation_now_dt.isoformat()
-            else:
-                self._state["simulation_now"] = now.isoformat()
+            deterministic_start = self._state.get("deterministic_start_time")
+            simulation_now_dt = _parse_deterministic_start(deterministic_start)
+            self._state["simulation_now"] = simulation_now_dt.isoformat()
             self._state["last_reset_at"] = now.isoformat()
             self._persist_unlocked()
             self._emit_control_event_unlocked(

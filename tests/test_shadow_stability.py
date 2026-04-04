@@ -14,7 +14,7 @@ from shadow.fixtures import (
 
 class TestHarnessDefaults:
     def test_default_start_time_is_stable_and_exposed(self):
-        assert SHADOW_DEFAULT_START_TIME == "2150-01-01T00:00:00Z"
+        assert SHADOW_DEFAULT_START_TIME == "2100-01-01T00:00:00Z"
         with DeterministicRun(preset="baseline") as run:
             config = run.get_config()
         assert config.get("deterministic_start_time") == SHADOW_DEFAULT_START_TIME

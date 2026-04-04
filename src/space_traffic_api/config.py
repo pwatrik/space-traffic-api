@@ -85,7 +85,7 @@ class AppConfig:
             datetime.fromisoformat(self.deterministic_start_time.replace("Z", "+00:00"))
         except ValueError:
             errors.append(
-                "SPACE_TRAFFIC_DETERMINISTIC_START_TIME must be ISO-8601 (example: 2150-01-01T00:00:00Z)"
+                "SPACE_TRAFFIC_DETERMINISTIC_START_TIME must be ISO-8601 (example: 2100-01-01T00:00:00Z)"
             )
 
         if errors:
@@ -113,7 +113,7 @@ class AppConfig:
                 424242,
                 "SPACE_TRAFFIC_DETERMINISTIC_SEED",
             ),
-            deterministic_start_time=os.getenv("SPACE_TRAFFIC_DETERMINISTIC_START_TIME", "2150-01-01T00:00:00Z"),
+            deterministic_start_time=os.getenv("SPACE_TRAFFIC_DETERMINISTIC_START_TIME", "2100-01-01T00:00:00Z"),
             retention_max_rows=_as_int(
                 os.getenv("SPACE_TRAFFIC_RETENTION_MAX_ROWS"),
                 200000,
@@ -132,7 +132,7 @@ class AppConfig:
             ),
             simulation_time_scale=_as_float(
                 os.getenv("SPACE_TRAFFIC_SIMULATION_TIME_SCALE"),
-                1.0,
+                1500.0,
                 "SPACE_TRAFFIC_SIMULATION_TIME_SCALE",
             ),
             economy_preference_weight=_as_float(
