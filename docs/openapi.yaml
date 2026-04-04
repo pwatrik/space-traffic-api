@@ -174,11 +174,11 @@ components:
 
     Departure:
       type: object
-      required: [id, event_uid, departure_time, malformed, fault_flags]
+      required: [id, event_uid, observed_at, departure_time, malformed, fault_flags]
       description: |
         Time semantics:
+        - `observed_at` is wall-clock time when the event was persisted/observed by this server.
         - `departure_time` and `est_arrival_time` are simulation-time values.
-        - A dedicated wall-clock event timestamp field is planned in Milestone 2.6.
       properties:
         id:
           type: integer
@@ -187,6 +187,9 @@ components:
         event_uid:
           type: string
           example: EVT-20150101-0042-SHIP-00042
+        observed_at:
+          type: string
+          format: date-time
         departure_time:
           type: string
           format: date-time
@@ -220,16 +223,19 @@ components:
 
     ControlEvent:
       type: object
-      required: [id, event_time, event_type, action, payload]
+      required: [id, observed_at, event_time, event_type, action, payload]
       description: |
         Time semantics:
-        - `event_time` currently tracks simulation time.
-        - A dedicated wall-clock event timestamp field is planned in Milestone 2.6.
+        - `observed_at` is wall-clock time when the event was persisted/observed by this server.
+        - `event_time` tracks simulation time.
       properties:
         id:
           type: integer
           description: Auto-incrementing row ID. Use as cursor for polling.
           example: 7
+        observed_at:
+          type: string
+          format: date-time
         event_time:
           type: string
           format: date-time

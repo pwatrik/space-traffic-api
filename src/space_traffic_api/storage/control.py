@@ -17,15 +17,17 @@ class ControlRepository:
         action: str,
         payload: dict[str, Any],
         event_time: str | None = None,
+        created_at: str | None = None,
     ) -> int:
         effective_event_time = event_time or datetime.now(UTC).isoformat()
+        effective_created_at = created_at or datetime.now(UTC).isoformat()
         with self._context.lock:
             cur = self._context.conn.execute(
                 """
-                INSERT INTO control_events (event_time, event_type, action, payload_json)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO control_events (event_time, event_type, action, payload_json, created_at)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (effective_event_time, event_type, action, json.dumps(payload)),
+                (effective_event_time, event_type, action, json.dumps(payload), effective_created_at),
             )
             self._context.conn.commit()
             return int(cur.lastrowid)

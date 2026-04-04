@@ -297,6 +297,7 @@ def test_merchant_departure_updates_ship_cargo_from_source_station(monkeypatch):
                     time.sleep(0.2)
 
             assert merchant_departure is not None
+            assert merchant_departure.get("observed_at")
 
             source_station_id = merchant_departure["source_station_id"]
             expected_cargo = station_cargo.get(source_station_id, "")

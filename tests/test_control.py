@@ -58,6 +58,7 @@ def test_activate_scenario_fault_and_reset():
             assert control_events.status_code == 200
             events_payload = control_events.get_json()
             assert events_payload["count"] >= 3
+            assert all(event.get("observed_at") for event in events_payload["control_events"])
             actions = {(event["event_type"], event["action"]) for event in events_payload["control_events"]}
             assert ("scenario", "activated") in actions
             assert ("fault", "activated") in actions

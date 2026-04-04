@@ -95,7 +95,8 @@ class SQLiteStore:
                     event_time TEXT NOT NULL,
                     event_type TEXT NOT NULL,
                     action TEXT NOT NULL,
-                    payload_json TEXT NOT NULL
+                    payload_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_control_events_id ON control_events(id);
@@ -112,6 +113,14 @@ class SQLiteStore:
             self._ensure_column("ships", "crew", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column("ships", "passengers", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column("ship_state", "ship_age_days", "REAL NOT NULL DEFAULT 0")
+            self._ensure_column("control_events", "created_at", "TEXT NOT NULL DEFAULT ''")
+            self._context.conn.execute(
+                """
+                UPDATE control_events
+                SET created_at = event_time
+                WHERE created_at IS NULL OR created_at = ''
+                """
+            )
             self._context.conn.commit()
 
     def _ensure_column(self, table_name: str, column_name: str, column_sql: str) -> None:
@@ -275,12 +284,14 @@ class SQLiteStore:
         action: str,
         payload: dict[str, Any],
         event_time: str | None = None,
+        created_at: str | None = None,
     ) -> int:
         return self.control.insert_event(
             event_type=event_type,
             action=action,
             payload=payload,
             event_time=event_time,
+            created_at=created_at,
         )
 
     def list_control_events(

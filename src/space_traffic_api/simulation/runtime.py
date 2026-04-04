@@ -373,6 +373,7 @@ class RuntimeState:
 
     def _emit_control_event_unlocked(self, event_type: str, action: str, payload: dict[str, Any]) -> None:
         event_time = self._clock_now_unlocked().isoformat()
+        observed_at = datetime.now(UTC).isoformat()
         record = {
             "event_type": event_type,
             "action": action,
@@ -383,8 +384,10 @@ class RuntimeState:
             action=action,
             payload=payload,
             event_time=event_time,
+            created_at=observed_at,
         )
         record["event_time"] = event_time
+        record["observed_at"] = observed_at
 
         with self._subscribers_lock:
             subscribers = list(self._subscribers)

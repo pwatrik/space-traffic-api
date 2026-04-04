@@ -30,6 +30,7 @@ def serialize_departure(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": row["id"],
         "event_uid": row["event_uid"],
+        "observed_at": row.get("created_at") or row.get("observed_at"),
         "departure_time": row["departure_time"],
         "ship_id": row.get("ship_id"),
         "source_station_id": row.get("source_station_id"),
@@ -54,6 +55,7 @@ def serialize_control_event(row: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "id": row["id"],
+        "observed_at": row.get("created_at") or row.get("observed_at"),
         "event_time": row["event_time"],
         "event_type": row["event_type"],
         "action": row["action"],

@@ -13,7 +13,7 @@ class DepartureRepository:
         self._context = context
 
     def insert(self, event: dict[str, Any]) -> int:
-        now = datetime.now(UTC).isoformat()
+        observed_at = str(event.get("observed_at") or datetime.now(UTC).isoformat())
         with self._context.lock:
             cur = self._context.conn.execute(
                 """
@@ -33,7 +33,7 @@ class DepartureRepository:
                     json.dumps(event.get("fault_flags", [])),
                     1 if event.get("malformed") else 0,
                     event["payload_json"],
-                    now,
+                    observed_at,
                 ),
             )
             self._context.conn.commit()

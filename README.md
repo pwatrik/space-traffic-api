@@ -49,8 +49,8 @@ Design contract and rollout sequence are documented in [docs/simulation-time-mod
 
 Current implementation note:
 
-- Simulation currently exposes `simulation_now` and uses simulated timestamps for most generated event fields.
-- API wall-clock vs simulated timestamp split is planned for Milestone 2.6 implementation sessions.
+- Simulation currently exposes `simulation_now` and uses simulated timestamps for in-universe event fields.
+- API departure and control-event payloads now include `observed_at` as explicit wall-clock time, while `departure_time`, `est_arrival_time`, and `event_time` remain simulation-time fields.
 
 ## CI Policy
 
