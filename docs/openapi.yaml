@@ -175,6 +175,10 @@ components:
     Departure:
       type: object
       required: [id, event_uid, departure_time, malformed, fault_flags]
+      description: |
+        Time semantics:
+        - `departure_time` and `est_arrival_time` are simulation-time values.
+        - A dedicated wall-clock event timestamp field is planned in Milestone 2.6.
       properties:
         id:
           type: integer
@@ -217,6 +221,10 @@ components:
     ControlEvent:
       type: object
       required: [id, event_time, event_type, action, payload]
+      description: |
+        Time semantics:
+        - `event_time` currently tracks simulation time.
+        - A dedicated wall-clock event timestamp field is planned in Milestone 2.6.
       properties:
         id:
           type: integer

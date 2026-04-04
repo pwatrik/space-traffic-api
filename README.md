@@ -38,6 +38,20 @@ docker build -t space-traffic-api .
 docker run --rm -p 8000:8000 space-traffic-api
 ```
 
+## Simulation Time Semantics
+
+Milestone 2.6 introduces an explicit two-clock contract:
+
+- **Simulation time** drives in-universe behavior (ship travel, orbital movement, event durations, economy progression).
+- **Wall clock time** records when API-visible changes were observed/persisted on the running server.
+
+Design contract and rollout sequence are documented in [docs/simulation-time-model.md](docs/simulation-time-model.md).
+
+Current implementation note:
+
+- Simulation currently exposes `simulation_now` and uses simulated timestamps for most generated event fields.
+- API wall-clock vs simulated timestamp split is planned for Milestone 2.6 implementation sessions.
+
 ## CI Policy
 
 - Pull requests and pushes to `main` run fast checks with slow tests excluded.

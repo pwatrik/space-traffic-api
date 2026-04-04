@@ -160,6 +160,9 @@ Introduce a rough orbital-position distance model that changes over simulated ti
 Estimated effort: 6-9 sessions
 Status: Planned
 
+### Progress
+- Completed: Session 1 (simulation-time contract formalized, naming clarified, and API timing semantics documented in docs/simulation-time-model.md).
+
 ### Goal
 Introduce a dedicated simulation clock and a clean wall-clock vs simulated-time contract so long-haul travel, orbital movement, economy, and timed events all advance on the same compressed simulation timeline.
 
