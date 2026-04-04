@@ -98,6 +98,7 @@ Report schema highlights:
 - Golden determinism contract test: `tests/test_golden_snapshot.py`
 - Golden capture helper: `scripts/capture_golden_snapshot.py`
 - Perf baseline script: `scripts/benchmark_deterministic.py`
+- Orbital scaling benchmark script: `scripts/benchmark_orbital_scaling.py`
 
 Refresh golden snapshot after intentional deterministic behavior changes:
 
@@ -109,6 +110,12 @@ Run baseline benchmark:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\benchmark_deterministic.py --events 10 --rate 300
+```
+
+Run orbital scaling benchmark matrix:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\benchmark_orbital_scaling.py --output artifacts\orbital_benchmark_results.json
 ```
 
 Write benchmark output to a release artifact path:

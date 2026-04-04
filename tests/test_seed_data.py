@@ -4,7 +4,13 @@ from unittest.mock import patch
 
 import pytest
 
-from space_traffic_api.seed_data import build_ships, build_stations, load_naming_config, load_seed_catalog
+from space_traffic_api.seed_data import (
+    build_ships,
+    build_stations,
+    load_naming_config,
+    load_seed_catalog,
+    orbital_anchor_body_for_station,
+)
 
 
 _MINIMAL_CATALOG = {
@@ -293,6 +299,23 @@ def test_moon_station_inherits_parent_planet_distance_rank():
     for station in moon_stations:
         rank = int(station["economy_profile"].get("distance_rank", 0))
         assert rank >= 1
+
+
+def test_station_orbital_anchor_body_tracks_parent_rules():
+    stations = build_stations()
+    assert stations
+
+    for station in stations:
+        assert station.get("orbital_anchor_body") == orbital_anchor_body_for_station(station)
+
+    moon_station = next(station for station in stations if station["body_type"] == "moon")
+    assert moon_station["orbital_anchor_body"] == moon_station["parent_body"]
+
+    asteroid_station = next(station for station in stations if station["body_type"] == "asteroid")
+    assert asteroid_station["orbital_anchor_body"] == asteroid_station["body_name"]
+
+    planet_station = next(station for station in stations if station["body_type"] == "planet")
+    assert planet_station["orbital_anchor_body"] == planet_station["body_name"]
 
 
 def test_invalid_seed_catalog_raises():

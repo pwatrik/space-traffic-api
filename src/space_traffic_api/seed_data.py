@@ -39,6 +39,22 @@ def _sanitize_station_token(raw: str) -> str:
     return re.sub(r"[^A-Z0-9_]+", "_", raw.upper()).strip("_")
 
 
+def orbital_anchor_body_for_station(station: dict[str, Any]) -> str:
+    body_type = str(station.get("body_type") or "").strip().lower()
+    body_name = str(station.get("body_name") or "").strip()
+    parent_body = str(station.get("parent_body") or "").strip()
+
+    if body_type == "moon" and parent_body:
+        return parent_body
+    if body_type == "asteroid" and body_name:
+        return body_name
+    if body_name:
+        return body_name
+    if parent_body:
+        return parent_body
+    return "Unknown"
+
+
 def _normalize_size_classes(path: str, value: Any) -> list[str]:
     classes = _ensure_str_list(path, value, min_items=1)
     normalized = [item.strip().lower() for item in classes]
@@ -577,6 +593,7 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
                     "body_name": planet,
                     "body_type": "planet",
                     "parent_body": planet,
+                    "orbital_anchor_body": planet,
                     "cargo_type": cargo_type,
                     "allowed_size_classes": template["allowed_size_classes"],
                     "economy_profile": _station_economy_profile("planet", distance_rank=distance_order.get(planet, 5)),
@@ -599,6 +616,7 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
                     "body_name": planet,
                     "body_type": "planet",
                     "parent_body": planet,
+                    "orbital_anchor_body": planet,
                     "cargo_type": cargo_type,
                     "allowed_size_classes": template["allowed_size_classes"],
                     "economy_profile": _station_economy_profile("planet", distance_rank=distance_order.get(planet, 5)),
@@ -627,6 +645,7 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
                     "body_name": moon_name,
                     "body_type": "moon",
                     "parent_body": parent,
+                    "orbital_anchor_body": parent,
                     "cargo_type": cargo_type,
                     "allowed_size_classes": template["allowed_size_classes"],
                     "economy_profile": _station_economy_profile("moon", distance_rank=distance_order.get(parent, 5)),
@@ -650,6 +669,7 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
                         "body_name": moon_name,
                         "body_type": "moon",
                         "parent_body": parent,
+                        "orbital_anchor_body": parent,
                         "cargo_type": cargo_type,
                         "allowed_size_classes": template["allowed_size_classes"],
                         "economy_profile": _station_economy_profile("moon", distance_rank=distance_order.get(parent, 5)),
@@ -672,6 +692,7 @@ def build_stations(catalog_path: str | None = None, catalog: dict[str, Any] | No
                 "body_name": asteroid,
                 "body_type": "asteroid",
                 "parent_body": template["parent_body"] or "Asteroid Belt",
+                "orbital_anchor_body": asteroid,
                 "cargo_type": cargo_type,
                 "allowed_size_classes": template["allowed_size_classes"],
                 "economy_profile": _station_economy_profile("asteroid", distance_rank=distance_order.get("Asteroid Belt", 5)),

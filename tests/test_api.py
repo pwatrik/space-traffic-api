@@ -314,3 +314,73 @@ def test_merchant_departure_updates_ship_cargo_from_source_station(monkeypatch):
             app.config["space_store"].close()
 
 
+def test_config_includes_orbital_diagnostics(monkeypatch):
+    with TemporaryDirectory() as tmp:
+        monkeypatch.setenv("SPACE_TRAFFIC_DB_PATH", f"{tmp}/test.db")
+        monkeypatch.setenv("SPACE_TRAFFIC_DISABLE_GENERATOR", "true")
+        monkeypatch.setenv("SPACE_TRAFFIC_DETERMINISTIC_MODE", "true")
+        monkeypatch.setenv("SPACE_TRAFFIC_DETERMINISTIC_SEED", "5150")
+        monkeypatch.setenv("SPACE_TRAFFIC_ORBITAL_DISTANCE_MODEL_ENABLED", "true")
+
+        app = create_app()
+        client = app.test_client()
+        try:
+            response = client.get("/config")
+            assert response.status_code == 200
+            payload = response.get_json()
+            assert "orbital_diagnostics" in payload
+
+            diagnostics = payload["orbital_diagnostics"]
+            assert diagnostics["enabled"] is True
+            assert diagnostics["body_count"] > 0
+            assert diagnostics["station_anchor_count"] >= diagnostics["body_count"]
+            assert "bodies" in diagnostics
+            assert "Earth" in diagnostics["bodies"]
+
+            earth = diagnostics["bodies"]["Earth"]
+            assert earth["body_id"] == "Earth"
+            assert "phase_radians" in earth
+            assert "x" in earth
+            assert "y" in earth
+        finally:
+            app.config["space_store"].close()
+
+
+def test_control_reset_rewinds_orbital_diagnostics(monkeypatch):
+    with TemporaryDirectory() as tmp:
+        monkeypatch.setenv("SPACE_TRAFFIC_DB_PATH", f"{tmp}/test.db")
+        monkeypatch.setenv("SPACE_TRAFFIC_API_KEY", "test-key")
+        monkeypatch.setenv("SPACE_TRAFFIC_DISABLE_GENERATOR", "true")
+        monkeypatch.setenv("SPACE_TRAFFIC_DETERMINISTIC_MODE", "true")
+        monkeypatch.setenv("SPACE_TRAFFIC_DETERMINISTIC_SEED", "5150")
+        monkeypatch.setenv("SPACE_TRAFFIC_ORBITAL_DISTANCE_MODEL_ENABLED", "true")
+
+        app = create_app()
+        client = app.test_client()
+        headers = {"X-API-Key": "test-key"}
+        try:
+            initial = client.get("/config")
+            assert initial.status_code == 200
+            initial_bodies = initial.get_json()["orbital_diagnostics"]["bodies"]
+
+            simulation = app.config["space_simulation"]
+            generator = simulation._generator
+            tick_time = generator._current_tick_time(simulation.snapshot())
+            generator._advance_sim_time(tick_time, 30 * 86400.0)
+
+            advanced = client.get("/config")
+            assert advanced.status_code == 200
+            advanced_bodies = advanced.get_json()["orbital_diagnostics"]["bodies"]
+            assert advanced_bodies != initial_bodies
+
+            reset = client.post("/control/reset", headers=headers, json={"seed": 5150})
+            assert reset.status_code == 200
+
+            rewound = client.get("/config")
+            assert rewound.status_code == 200
+            rewound_bodies = rewound.get_json()["orbital_diagnostics"]["bodies"]
+            assert rewound_bodies == initial_bodies
+        finally:
+            app.config["space_store"].close()
+
+

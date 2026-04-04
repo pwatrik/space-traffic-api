@@ -5,15 +5,17 @@ import random
 import sqlite3
 import threading
 import time
+import math
 from collections import deque
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from ..seed_data import load_naming_config, station_distance_groups
+from ..seed_data import load_naming_config, orbital_anchor_body_for_station, station_distance_groups
 from ..store import SQLiteStore
 from .engine.departure_builder import create_departure_event
 from .engine.fault_injector import apply_faults
+from .engine.orbital_state import OrbitalBodyState, advance_orbital_body_state, initialize_orbital_body_state
 from .engine.routing import pick_destination
 from .engine.ship_selector import select_ship
 from .engine.simulation_engine import SimulationEngine
@@ -46,7 +48,13 @@ class DepartureGenerator(threading.Thread):
         self._distance_groups = station_distance_groups(stations)
         self._ship_lookup = {s["id"]: s for s in ships}
         self._station_lookup = {s["id"]: s for s in stations}
+        self._station_orbital_anchor = {
+            str(station["id"]): orbital_anchor_body_for_station(station)
+            for station in stations
+            if station.get("id")
+        }
         self._catalog = catalog or {}
+        self._orbital_state: dict[str, OrbitalBodyState] = {}
         self._lifecycle = self._catalog.get("lifecycle", {})
         self._ship_generation = self._catalog.get("ship_generation", {})
         defaults = self._ship_generation.get("defaults") or {}
@@ -189,6 +197,7 @@ class DepartureGenerator(threading.Thread):
         if self._rng is None:
             self._rng = random.Random(seed if det_mode else None)
             self._set_sim_time(state)
+            self._initialize_orbital_state(state)
             return
 
         reset_marker = state.get("last_reset_at")
@@ -197,9 +206,29 @@ class DepartureGenerator(threading.Thread):
             self._last_reset_marker = reset_marker
             self._rng = random.Random(seed if det_mode else None)
             self._set_sim_time(state)
+            self._initialize_orbital_state(state)
             self._event_counter = 0
             self._last_event_uid = ""
             self._startup_merchants_launched = False
+
+    def _initialize_orbital_state(self, state: dict[str, Any]) -> None:
+        seed = int(state.get("deterministic_seed", 424242) or 424242)
+        self._orbital_state = initialize_orbital_body_state(self._catalog, seed)
+
+    def orbital_state_snapshot(self) -> dict[str, dict[str, Any]]:
+        self._ensure_rng(self._runtime.snapshot())
+        return {
+            body_id: body_state.snapshot()
+            for body_id, body_state in sorted(self._orbital_state.items())
+        }
+
+    def orbital_diagnostics_snapshot(self) -> dict[str, Any]:
+        bodies = self.orbital_state_snapshot()
+        return {
+            "body_count": len(bodies),
+            "station_anchor_count": len(self._station_orbital_anchor),
+            "bodies": bodies,
+        }
 
     def _set_sim_time(self, state: dict[str, Any]) -> None:
         if state.get("deterministic_mode"):
@@ -751,6 +780,7 @@ class DepartureGenerator(threading.Thread):
         return self._sim_time
 
     def _advance_sim_time(self, tick_time: datetime, interval_seconds: float) -> None:
+        advance_orbital_body_state(self._orbital_state, interval_seconds / 86400.0)
         self._sim_time = tick_time + timedelta(seconds=interval_seconds)
         self._runtime.set_simulation_now(self._sim_time.isoformat())
 
@@ -758,11 +788,61 @@ class DepartureGenerator(threading.Thread):
         if self._rng is None:
             self._ensure_rng(self._runtime.snapshot())
 
+        runtime_snap = self._runtime.snapshot()
         src_group = self._distance_groups.get(source, 5)
         dst_group = self._distance_groups.get(destination, 5)
-        hops = abs(src_group - dst_group)
+        base_hops = abs(src_group - dst_group)
+        hops = self._departure_hops_with_orbital_state(
+            source_station_id=source,
+            destination_station_id=destination,
+            base_hops=float(base_hops),
+            runtime_snap=runtime_snap,
+        )
         hours = (6 + (hops * 8) + self._rng.uniform(0.5, 12.0)) / self._ship_speed_multiplier
         return departure_time + timedelta(hours=hours)
+
+    def _departure_hops_with_orbital_state(
+        self,
+        source_station_id: str,
+        destination_station_id: str,
+        base_hops: float,
+        runtime_snap: dict[str, Any],
+    ) -> float:
+        if not runtime_snap.get("orbital_distance_model_enabled"):
+            return base_hops
+
+        try:
+            min_multiplier = float(runtime_snap.get("orbital_distance_multiplier_min", 0.7) or 0.7)
+        except (TypeError, ValueError):
+            min_multiplier = 0.7
+        try:
+            max_multiplier = float(runtime_snap.get("orbital_distance_multiplier_max", 1.3) or 1.3)
+        except (TypeError, ValueError):
+            max_multiplier = 1.3
+
+        min_multiplier = max(0.5, min(1.0, min_multiplier))
+        max_multiplier = max(1.0, min(1.5, max_multiplier))
+        if max_multiplier < min_multiplier:
+            max_multiplier = min_multiplier
+
+        src_anchor = self._station_orbital_anchor.get(source_station_id)
+        dst_anchor = self._station_orbital_anchor.get(destination_station_id)
+        if not src_anchor or not dst_anchor:
+            return base_hops
+
+        src_state = self._orbital_state.get(src_anchor)
+        dst_state = self._orbital_state.get(dst_anchor)
+        if not src_state or not dst_state:
+            return base_hops
+
+        radial_distance = math.hypot(dst_state.x - src_state.x, dst_state.y - src_state.y)
+        min_distance = abs(src_state.radius_scale - dst_state.radius_scale)
+        max_distance = src_state.radius_scale + dst_state.radius_scale
+        spread = max(0.001, max_distance - min_distance)
+        normalized_distance = max(0.0, min(1.0, (radial_distance - min_distance) / spread))
+        multiplier = min_multiplier + ((max_multiplier - min_multiplier) * normalized_distance)
+
+        return base_hops * multiplier
 
     def _apply_faults(self, event: dict[str, Any], state: dict[str, Any]) -> None:
         apply_faults(
