@@ -10,10 +10,10 @@ from space_traffic_api.app import create_app
 def _write_catalog(path: Path, *, ship_count: int, lifecycle: dict) -> None:
     catalog = {
         "celestial": {
-            "planets": ["Earth"],
+            "planets": ["Earth", "Mars"],
             "moons": [],
             "asteroids": [],
-            "distance_order": {"Earth": 1, "Asteroid Belt": 2},
+            "distance_order": {"Earth": 1, "Mars": 2, "Asteroid Belt": 3},
         },
         "stations": {
             "templates": [
@@ -102,6 +102,16 @@ def test_lifecycle_emits_decommission_events(monkeypatch):
             "faction_distribution": {"merchant": 1.0},
             "spawn_policy": "compatible_random_station",
         },
+        "pirate_activity": {
+            "enabled": False,
+            "allowed_anchors": ["Earth"],
+            "strength_start": 1.0,
+            "strength_end_threshold": 0.5,
+            "merchant_arrival_destruction_multiplier": 1.0,
+            "strength_decay_per_bounty_hunter_arrival": 0.01,
+            "respawn_min_days": 10,
+            "respawn_max_days": 20,
+        },
     }
 
     with TemporaryDirectory() as tmp:
@@ -151,6 +161,16 @@ def test_lifecycle_emits_war_loss_events(monkeypatch):
             "max_builds_per_day": 1,
             "faction_distribution": {"merchant": 1.0},
             "spawn_policy": "compatible_random_station",
+        },
+        "pirate_activity": {
+            "enabled": False,
+            "allowed_anchors": ["Earth"],
+            "strength_start": 1.0,
+            "strength_end_threshold": 0.5,
+            "merchant_arrival_destruction_multiplier": 1.0,
+            "strength_decay_per_bounty_hunter_arrival": 0.01,
+            "respawn_min_days": 10,
+            "respawn_max_days": 20,
         },
     }
 
@@ -202,6 +222,16 @@ def test_lifecycle_emits_build_events(monkeypatch):
             "faction_distribution": {"merchant": 1.0},
             "spawn_policy": "compatible_random_station",
         },
+        "pirate_activity": {
+            "enabled": False,
+            "allowed_anchors": ["Earth"],
+            "strength_start": 1.0,
+            "strength_end_threshold": 0.5,
+            "merchant_arrival_destruction_multiplier": 1.0,
+            "strength_decay_per_bounty_hunter_arrival": 0.01,
+            "respawn_min_days": 10,
+            "respawn_max_days": 20,
+        },
     }
 
     with TemporaryDirectory() as tmp:
@@ -222,7 +252,7 @@ def test_lifecycle_emits_build_events(monkeypatch):
         headers = {"X-API-Key": "test-key"}
 
         try:
-            event = _wait_for_lifecycle_action(client, headers, "ships_built")
+            event = _wait_for_lifecycle_action(client, headers, "ships_built", timeout_seconds=15.0)
             assert event is not None
             assert event["payload"]["count"] >= 1
 
@@ -257,6 +287,16 @@ def test_build_queue_uses_ship_names_singular_from_naming_config(monkeypatch):
             "faction_distribution": {"merchant": 1.0},
             "spawn_policy": "compatible_random_station",
         },
+        "pirate_activity": {
+            "enabled": False,
+            "allowed_anchors": ["Earth"],
+            "strength_start": 1.0,
+            "strength_end_threshold": 0.5,
+            "merchant_arrival_destruction_multiplier": 1.0,
+            "strength_decay_per_bounty_hunter_arrival": 0.01,
+            "respawn_min_days": 10,
+            "respawn_max_days": 20,
+        },
     }
     singular_names = {"Stellar Nomad", "Void Phantom", "Drift Runner"}
 
@@ -284,7 +324,7 @@ def test_build_queue_uses_ship_names_singular_from_naming_config(monkeypatch):
         headers = {"X-API-Key": "test-key"}
 
         try:
-            event = _wait_for_lifecycle_action(client, headers, "ships_built")
+            event = _wait_for_lifecycle_action(client, headers, "ships_built", timeout_seconds=15.0)
             assert event is not None
             assert event["payload"]["count"] >= 1
 

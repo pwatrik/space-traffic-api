@@ -239,6 +239,7 @@ class DepartureGenerator(threading.Thread):
             self._rng = random.Random(seed if det_mode else None)
             self._set_sim_time(state)
             self._last_wall_tick_monotonic = time.monotonic()
+            self._initialize_orbital_state(state)
             return
 
         reset_marker = state.get("last_reset_at")
@@ -251,6 +252,7 @@ class DepartureGenerator(threading.Thread):
             self._event_counter = 0
             self._last_event_uid = ""
             self._startup_merchants_launched = False
+            self._initialize_orbital_state(state)
 
     def _initialize_orbital_state(self, state: dict[str, Any]) -> None:
         seed = int(state.get("deterministic_seed", 424242) or 424242)
