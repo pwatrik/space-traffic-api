@@ -78,6 +78,8 @@ class DepartureGenerator(threading.Thread):
         self._last_tick_completed_at: str | None = None
         self._departures_window_seconds = 60.0
         self._departure_timestamps: deque[float] = deque()
+        self._last_wall_tick_monotonic: float | None = None
+        self._min_wall_wait_seconds = 0.05
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -135,9 +137,18 @@ class DepartureGenerator(threading.Thread):
             scenario = state.get("active_scenario")
             effective_min, effective_max = self._effective_rate_bounds(state, scenario)
             rate = self._rng.randint(effective_min, effective_max)
-            interval_seconds = max(0.2, 60.0 / float(rate))
+
+            now_monotonic = time.monotonic()
+            if self._last_wall_tick_monotonic is None:
+                wall_elapsed_seconds = 0.0
+            else:
+                wall_elapsed_seconds = max(0.0, now_monotonic - self._last_wall_tick_monotonic)
+            self._last_wall_tick_monotonic = now_monotonic
+
             simulation_time_scale = max(0.1, float(state.get("simulation_time_scale", 1.0) or 1.0))
-            wait_seconds = interval_seconds / simulation_time_scale
+            interval_seconds = wall_elapsed_seconds * simulation_time_scale
+            base_interval_seconds = max(0.2, 60.0 / float(rate))
+            wait_seconds = max(self._min_wall_wait_seconds, base_interval_seconds / simulation_time_scale)
             tick_time = self._current_tick_time(state)
 
             try:
@@ -189,6 +200,7 @@ class DepartureGenerator(threading.Thread):
         if self._rng is None:
             self._rng = random.Random(seed if det_mode else None)
             self._set_sim_time(state)
+            self._last_wall_tick_monotonic = time.monotonic()
             return
 
         reset_marker = state.get("last_reset_at")
@@ -197,6 +209,7 @@ class DepartureGenerator(threading.Thread):
             self._last_reset_marker = reset_marker
             self._rng = random.Random(seed if det_mode else None)
             self._set_sim_time(state)
+            self._last_wall_tick_monotonic = time.monotonic()
             self._event_counter = 0
             self._last_event_uid = ""
             self._startup_merchants_launched = False

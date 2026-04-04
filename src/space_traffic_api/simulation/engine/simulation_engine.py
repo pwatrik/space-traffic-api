@@ -62,7 +62,7 @@ class SimulationEngine:
                 startup_merchants_launched=launched,
                 arrived_ships=arrived_ships,
                 interval_seconds=interval_seconds,
-                wait_seconds=min(1.0, wait_seconds),
+                wait_seconds=wait_seconds,
             )
 
         event = build_event(state, scenario, tick_time)
@@ -74,7 +74,7 @@ class SimulationEngine:
                 startup_merchants_launched=launched,
                 arrived_ships=arrived_ships,
                 interval_seconds=interval_seconds,
-                wait_seconds=min(1.0, wait_seconds),
+                wait_seconds=wait_seconds,
             )
 
         apply_faults(event, state)
