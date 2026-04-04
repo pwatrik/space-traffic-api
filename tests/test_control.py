@@ -107,3 +107,45 @@ def test_patch_config_clamps_economy_knobs():
             assert high_body["economy_departure_impact_magnitude"] == 0.2
         finally:
             app.config["space_store"].close()
+
+
+def test_patch_config_clamps_orbital_knobs():
+    with TemporaryDirectory() as tmp:
+        os.environ["SPACE_TRAFFIC_DB_PATH"] = f"{tmp}/test.db"
+        os.environ["SPACE_TRAFFIC_API_KEY"] = "test-key"
+        os.environ["SPACE_TRAFFIC_DISABLE_GENERATOR"] = "true"
+        app = create_app()
+        client = app.test_client()
+        headers = {"X-API-Key": "test-key"}
+        try:
+            low = client.patch(
+                "/config",
+                headers=headers,
+                json={
+                    "orbital_distance_model_enabled": "yes",
+                    "orbital_distance_multiplier_min": -5,
+                    "orbital_distance_multiplier_max": 0,
+                },
+            )
+            assert low.status_code == 200
+            low_body = low.get_json()
+            assert low_body["orbital_distance_model_enabled"] is True
+            assert low_body["orbital_distance_multiplier_min"] == 0.5
+            assert low_body["orbital_distance_multiplier_max"] == 1.0
+
+            high = client.patch(
+                "/config",
+                headers=headers,
+                json={
+                    "orbital_distance_model_enabled": False,
+                    "orbital_distance_multiplier_min": 5,
+                    "orbital_distance_multiplier_max": 9,
+                },
+            )
+            assert high.status_code == 200
+            high_body = high.get_json()
+            assert high_body["orbital_distance_model_enabled"] is False
+            assert high_body["orbital_distance_multiplier_min"] == 1.0
+            assert high_body["orbital_distance_multiplier_max"] == 1.5
+        finally:
+            app.config["space_store"].close()

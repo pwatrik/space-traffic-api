@@ -247,6 +247,31 @@ canvas {
   background: #071520;
 }
 
+.orbital-plot-shell {
+  margin: 12px 0;
+  border: 1px solid rgba(140, 179, 207, 0.25);
+  border-radius: 10px;
+  background: rgba(4, 15, 23, 0.45);
+  padding: 10px;
+}
+
+.orbital-plot-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.orbital-plot-head h3 {
+  margin: 0;
+}
+
+.orbital-plot-canvas {
+  height: 320px;
+  display: block;
+}
+
 .control-grid {
   display: grid;
   gap: 12px;
@@ -549,6 +574,11 @@ th {
   .explorer-grid,
   .control-summary-grid {
     grid-template-columns: 1fr;
+  }
+
+  .orbital-plot-head {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 

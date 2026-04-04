@@ -49,6 +49,7 @@ class SimulationService:
             counts = self._store.get_counts()
         generator_metrics = self._generator.runtime_metrics()
         control_metrics = self._runtime.subscriber_metrics()
+        orbital_diagnostics = self._generator.orbital_diagnostics_snapshot()
         generator_metrics["control_events_total"] = counts.get("control_events", 0)
         generator_metrics["control_event_subscribers"] = control_metrics["subscribers"]
         generator_metrics["control_event_backlog_total"] = control_metrics["backlog_total"]
@@ -59,6 +60,10 @@ class SimulationService:
         state["effective_lifecycle"] = self._generator.effective_lifecycle_config(state.get("active_scenario"))
         state["effective_ship_generation"] = self._generator.effective_ship_generation_config()
         state["runtime_metrics"] = generator_metrics
+        state["orbital_diagnostics"] = {
+            "enabled": bool(state.get("orbital_distance_model_enabled", False)),
+            **orbital_diagnostics,
+        }
         return state
 
     def patch_config(self, patch: dict[str, Any]) -> dict[str, Any]:
@@ -81,6 +86,9 @@ class SimulationService:
 
     def estimate_arrival(self, departure_time: datetime, source: str, destination: str) -> datetime:
         return self._generator.estimate_arrival(departure_time, source, destination)
+
+    def orbital_state_snapshot(self) -> dict[str, dict[str, Any]]:
+        return self._generator.orbital_state_snapshot()
 
     def list_control_events(self, since_id: int | None, limit: int, order: str) -> list[dict[str, Any]]:
         return self._runtime.list_control_events(since_id=since_id, limit=limit, order=order)

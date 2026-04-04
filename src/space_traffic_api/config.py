@@ -44,6 +44,9 @@ class AppConfig:
     economy_preference_weight: float
     economy_drift_magnitude: float
     economy_departure_impact_magnitude: float
+    orbital_distance_model_enabled: bool
+    orbital_distance_multiplier_min: float
+    orbital_distance_multiplier_max: float
 
     def validate(self) -> None:
         errors: list[str] = []
@@ -80,6 +83,17 @@ class AppConfig:
 
         if not (0.001 <= self.economy_departure_impact_magnitude <= 0.2):
             errors.append("SPACE_TRAFFIC_ECONOMY_DEPARTURE_IMPACT_MAGNITUDE must be in [0.001, 0.2]")
+
+        if not (0.5 <= self.orbital_distance_multiplier_min <= 1.0):
+            errors.append("SPACE_TRAFFIC_ORBITAL_DISTANCE_MULTIPLIER_MIN must be in [0.5, 1.0]")
+
+        if not (1.0 <= self.orbital_distance_multiplier_max <= 1.5):
+            errors.append("SPACE_TRAFFIC_ORBITAL_DISTANCE_MULTIPLIER_MAX must be in [1.0, 1.5]")
+
+        if self.orbital_distance_multiplier_min > self.orbital_distance_multiplier_max:
+            errors.append(
+                "SPACE_TRAFFIC_ORBITAL_DISTANCE_MULTIPLIER_MIN must be <= SPACE_TRAFFIC_ORBITAL_DISTANCE_MULTIPLIER_MAX"
+            )
 
         try:
             datetime.fromisoformat(self.deterministic_start_time.replace("Z", "+00:00"))
@@ -149,6 +163,20 @@ class AppConfig:
                 os.getenv("SPACE_TRAFFIC_ECONOMY_DEPARTURE_IMPACT_MAGNITUDE"),
                 0.012,
                 "SPACE_TRAFFIC_ECONOMY_DEPARTURE_IMPACT_MAGNITUDE",
+            ),
+            orbital_distance_model_enabled=_as_bool(
+                os.getenv("SPACE_TRAFFIC_ORBITAL_DISTANCE_MODEL_ENABLED"),
+                False,
+            ),
+            orbital_distance_multiplier_min=_as_float(
+                os.getenv("SPACE_TRAFFIC_ORBITAL_DISTANCE_MULTIPLIER_MIN"),
+                0.7,
+                "SPACE_TRAFFIC_ORBITAL_DISTANCE_MULTIPLIER_MIN",
+            ),
+            orbital_distance_multiplier_max=_as_float(
+                os.getenv("SPACE_TRAFFIC_ORBITAL_DISTANCE_MULTIPLIER_MAX"),
+                1.3,
+                "SPACE_TRAFFIC_ORBITAL_DISTANCE_MULTIPLIER_MAX",
             ),
         )
         config.validate()
