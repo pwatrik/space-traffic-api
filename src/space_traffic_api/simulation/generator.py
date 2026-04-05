@@ -15,9 +15,8 @@ from ..seed_data import load_naming_config, orbital_anchor_body_for_station, sta
 from ..store import SQLiteStore
 from .engine.departure_builder import create_departure_event
 from .engine.fault_injector import apply_faults
-from .engine.optimization import StationEconomyCache
+from .engine.optimization import PickDestinationOptimized, StationEconomyCache
 from .engine.orbital_state import OrbitalBodyState, advance_orbital_body_state, initialize_orbital_body_state
-from .engine.routing import pick_destination
 from .engine.ship_selector import select_ship
 from .engine.simulation_engine import SimulationEngine
 from .policies.build import apply_build_queue_policy
@@ -77,6 +76,7 @@ class DepartureGenerator(threading.Thread):
         self._economy_snapshot_accumulator_days: float = 0.0
         self._economy_snapshot_refresh_interval_days: float = 1.0 / 24.0  # once per simulated hour
         self._station_economy_cache = StationEconomyCache(self._station_lookup)
+        self._destination_picker = PickDestinationOptimized(self._station_lookup, self._distance_groups)
         self._startup_merchants_launched = False
         self._engine = SimulationEngine()
         self._metrics_lock = threading.Lock()
@@ -617,12 +617,13 @@ class DepartureGenerator(threading.Thread):
         if not self._startup_launch_queue:
             return True
 
+        runtime_snap = self._runtime.snapshot()
         launches_remaining = min(self._startup_launch_batch_size, len(self._startup_launch_queue))
         while launches_remaining > 0:
             ship = self._startup_launch_queue.popleft()
             launches_remaining -= 1
             src = ship["current_station_id"]
-            dst = self._pick_destination(ship, src, scenario)
+            dst = self._pick_destination(ship, src, scenario, runtime_snap=runtime_snap)
             if not dst:
                 continue
             if self._is_scoped_interrupt(scenario, ship, src, dst):
@@ -684,18 +685,18 @@ class DepartureGenerator(threading.Thread):
                 self._departure_timestamps.popleft()
 
     def _pick_ship(self, scenario: dict[str, Any] | None, tick_time: datetime) -> dict[str, Any] | None:
-        candidates = self._store.list_available_ships()
+        all_available = self._store.list_available_ships()
         runtime_snap = self._runtime.snapshot()
         merchant_idle_pause_seconds = int(runtime_snap.get("merchant_idle_pause_seconds", 120))
         candidates = [
             ship
-            for ship in candidates
+            for ship in all_available
             if self._is_ship_departure_ready(ship, merchant_idle_pause_seconds, tick_time)
         ]
         if not candidates:
             return None
 
-        fallback = self._store.list_available_ships()
+        fallback = all_available
         return select_ship(
             candidates=candidates,
             fallback_candidates=fallback,
@@ -726,17 +727,18 @@ class DepartureGenerator(threading.Thread):
         ship: dict[str, Any],
         source_station_id: str,
         scenario: dict[str, Any] | None,
+        runtime_snap: dict[str, Any] | None = None,
     ) -> str | None:
-        runtime_snap = self._runtime.snapshot()
-        return pick_destination(
+        if runtime_snap is None:
+            runtime_snap = self._runtime.snapshot()
+        return self._destination_picker.pick_cached(
             ship=ship,
             source_station_id=source_station_id,
             scenario=scenario,
-            station_lookup=self._station_lookup,
             pirate_conf=self._lifecycle.get("pirate_activity") or {},
             pirate_state=runtime_snap.get("pirate_event"),
             rng=self._rng,
-            station_accepts_size_class=self._station_accepts_size_class,
+            station_accepts_size_class_func=self._station_accepts_size_class,
             economy_preference_weight=float(
                 _epw if (_epw := runtime_snap.get("economy_preference_weight")) is not None else 0.15
             ),

@@ -283,6 +283,8 @@ Status: In progress
 - Completed: Session 2 integrated station economy cache into generator lifecycle refresh path.
 - Completed: Session 2 batched startup merchant launches across ticks to reduce long single-tick stalls.
 - Completed: Session 2 regression validation for determinism/API suites after scheduler hot-path changes.
+- Completed: Session 3 integrated cached destination-picking path and reduced duplicate available-ship list queries in generator hot loops.
+- Completed: Session 3 preserved deterministic/golden contracts after optimization-path parity fix.
 
 ### Goal
 Upgrade engine internals so advanced simulation behavior remains stable, reproducible, and performant.

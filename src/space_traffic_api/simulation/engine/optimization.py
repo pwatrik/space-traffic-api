@@ -11,6 +11,8 @@ Usage: Add these optimizations to generator.py in the _apply_lifecycle method.
 from datetime import datetime
 from typing import Any
 
+from ..scenarios import SCENARIO_DEFINITIONS
+
 
 class StationEconomyCache:
     """Cache for station economy data with memory-efficient updates."""
@@ -157,8 +159,6 @@ class PickDestinationOptimized:
         # Lazy-load compatible station list per size class
         if cache_key not in self._compatible_stations:
             station_ids = list(self._station_lookup.keys())
-            if source_station_id in station_ids:
-                station_ids.remove(source_station_id)
             station_ids = [
                 sid
                 for sid in station_ids
@@ -173,6 +173,12 @@ class PickDestinationOptimized:
 
         if not station_ids:
             return None
+
+        if scenario and scenario.get("name") == "shortage":
+            keywords = SCENARIO_DEFINITIONS["shortage"].get("preferred_source_keywords", [])
+            preferred = [sid for sid in station_ids if any(key in sid for key in keywords)]
+            if preferred and rng.random() < 0.65:
+                return rng.choice(preferred)
 
         # Bounty hunter targeting: short-circuit if active
         is_bounty_hunter = str(ship.get("faction") or "") == "bounty_hunter"
