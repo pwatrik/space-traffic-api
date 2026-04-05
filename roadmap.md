@@ -163,6 +163,8 @@ Status: In progress
 ### Progress
 - Completed: Session 1 time-model contract formalized (wall-clock vs simulated-time semantics, migration-safe naming guidance).
 - Completed: Session 1 API/docs notes for timing-field interpretation and simulation_time_scale ratio semantics.
+- Completed: Session 2 dedicated simulation clock loop added in service/runtime path; generator now consumes simulation_now and no longer advances simulation clock per departure tick.
+- Completed: Session 2 regression coverage for wall-clock-driven simulation_now advancement and simulation_time_scale ratio behavior.
 
 ### Goal
 Introduce a dedicated simulation clock and a clean wall-clock vs simulated-time contract so long-haul travel, orbital movement, economy, and timed events all advance on the same compressed simulation timeline.
@@ -218,7 +220,7 @@ Introduce a dedicated simulation clock and a clean wall-clock vs simulated-time 
 
 ### Suggested Session Breakdown
 1. Session 1: formalize time model, rename/clarify clock semantics, and add roadmap/API notes. (completed)
-2. Session 2: implement dedicated simulation clock path and decouple it from generator cadence.
+2. Session 2: implement dedicated simulation clock path and decouple it from generator cadence. (completed)
 3. Session 3: change default epoch/reset behavior to `2100-01-01T00:00:00Z`; add config/runtime/UI controls for compression ratio.
 4. Session 4: replace hop-based ETA estimation with calibrated distance-based travel duration.
 5. Session 5: split wall-clock vs simulated timestamps in departures/control events/ship state serialization.

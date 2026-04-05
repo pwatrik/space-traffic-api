@@ -86,6 +86,7 @@ class DepartureGenerator(threading.Thread):
         self._last_tick_completed_at: str | None = None
         self._departures_window_seconds = 60.0
         self._departure_timestamps: deque[float] = deque()
+        self._last_tick_time: datetime | None = None
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -147,6 +148,12 @@ class DepartureGenerator(threading.Thread):
             simulation_time_scale = max(0.1, float(state.get("simulation_time_scale", 1.0) or 1.0))
             wait_seconds = interval_seconds / simulation_time_scale
             tick_time = self._current_tick_time(state)
+            elapsed_sim_seconds = interval_seconds
+            if self._last_tick_time is not None:
+                elapsed_sim_seconds = max(0.0, (tick_time - self._last_tick_time).total_seconds())
+            self._last_tick_time = tick_time
+            if elapsed_sim_seconds > 0.0:
+                advance_orbital_body_state(self._orbital_state, elapsed_sim_seconds / 86400.0)
 
             try:
                 result = self._engine.tick(
@@ -160,13 +167,18 @@ class DepartureGenerator(threading.Thread):
                     complete_arrivals=lambda t: self._store.complete_ship_arrivals_with_details(
                         t.isoformat(), now_iso=t.isoformat()
                     ),
-                    apply_lifecycle=self._apply_lifecycle,
+                    apply_lifecycle=lambda _interval, t, s, arrived: self._apply_lifecycle(
+                        elapsed_sim_seconds,
+                        t,
+                        s,
+                        arrived,
+                    ),
                     is_globally_interrupted=self._is_globally_interrupted,
                     build_event=self._build_event,
                     apply_faults=self._apply_faults,
                     delayed_insert_pause=lambda _event: self._stop_event.wait(timeout=1.5),
                     persist_and_publish_event=self._persist_and_publish_event,
-                    advance_sim_time=self._advance_sim_time,
+                    advance_sim_time=lambda _tick_time, _interval_seconds: None,
                 )
             except sqlite3.ProgrammingError as exc:
                 if "closed database" in str(exc).lower() or self._stop_event.is_set():
@@ -198,6 +210,7 @@ class DepartureGenerator(threading.Thread):
             self._rng = random.Random(seed if det_mode else None)
             self._set_sim_time(state)
             self._initialize_orbital_state(state)
+            self._last_tick_time = None
             return
 
         reset_marker = state.get("last_reset_at")
@@ -210,6 +223,7 @@ class DepartureGenerator(threading.Thread):
             self._event_counter = 0
             self._last_event_uid = ""
             self._startup_merchants_launched = False
+            self._last_tick_time = None
 
     def _initialize_orbital_state(self, state: dict[str, Any]) -> None:
         seed = int(state.get("deterministic_seed", 424242) or 424242)
@@ -775,6 +789,16 @@ class DepartureGenerator(threading.Thread):
         return False
 
     def _current_tick_time(self, state: dict[str, Any]) -> datetime:
+        raw = state.get("simulation_now")
+        if isinstance(raw, str) and raw.strip():
+            try:
+                parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=UTC)
+                self._sim_time = parsed
+                return parsed
+            except ValueError:
+                pass
         if self._sim_time is None:
             self._set_sim_time(state)
         return self._sim_time

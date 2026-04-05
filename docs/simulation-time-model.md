@@ -43,11 +43,18 @@ This document defines the current contract and target contract for simulation ti
 
 ## Planned Migration Sequence
 
-1. Session 2: introduce dedicated simulation clock loop and decouple progression from generation cadence.
+1. Session 2: introduce dedicated simulation clock loop and decouple progression from generation cadence. (implemented)
 2. Session 3: move default epoch/reset behavior to 2100-01-01T00:00:00Z and expose ratio controls cleanly.
 3. Session 4: recalibrate distance-driven travel durations against target route envelopes.
 4. Session 5: split wall-clock and simulated-time fields in API payloads.
 5. Session 6+: add regression and calibration coverage, then tune.
+
+## Session 2 Implementation Notes
+
+- SimulationService now runs a dedicated background clock thread that advances simulation_now from wall-clock elapsed time.
+- RuntimeState advances simulation_now by elapsed_wall_seconds * simulation_time_scale.
+- DepartureGenerator now reads simulation_now from runtime state each tick.
+- Generator no longer advances simulation_now after each departure tick; manual _advance_sim_time helper remains for tests.
 
 ## API Documentation Requirements (Session 1)
 
