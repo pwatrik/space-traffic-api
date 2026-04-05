@@ -4,20 +4,67 @@ import random
 from space_traffic_api.app import create_app
 
 
-def test_default_ship_speed_multiplier_keeps_long_routes_near_one_hour(monkeypatch, tmp_path):
+def test_calibrated_earth_mars_close_approach_is_about_three_to_four_days(monkeypatch, tmp_path):
     db_path = tmp_path / "travel_time.db"
     monkeypatch.setenv("SPACE_TRAFFIC_DB_PATH", str(db_path))
     monkeypatch.setenv("SPACE_TRAFFIC_API_KEY", "test-key")
     monkeypatch.setenv("SPACE_TRAFFIC_DISABLE_GENERATOR", "true")
+    monkeypatch.setenv("SPACE_TRAFFIC_DETERMINISTIC_MODE", "true")
+    monkeypatch.setenv("SPACE_TRAFFIC_DETERMINISTIC_SEED", "424242")
+    monkeypatch.setenv("SPACE_TRAFFIC_ORBITAL_DISTANCE_MODEL_ENABLED", "true")
+    monkeypatch.setenv("SPACE_TRAFFIC_ORBITAL_DISTANCE_MULTIPLIER_MIN", "0.7")
+    monkeypatch.setenv("SPACE_TRAFFIC_ORBITAL_DISTANCE_MULTIPLIER_MAX", "1.3")
 
     app = create_app()
     try:
         simulation = app.config["space_simulation"]
-        departure_time = datetime.now(UTC)
-        eta = simulation.estimate_arrival(departure_time, "STN-PLANET-MERCURY", "STN-PLANET-PLUTO")
-        hours = (eta - departure_time).total_seconds() / 3600.0
+        generator = simulation._generator
+        runtime_state = simulation.snapshot()
+        generator._ensure_rng(runtime_state)
 
-        assert 0.8 <= hours <= 1.1
+        # Calibrate against close approach: Earth -> Mars should be around 3-4 simulated days.
+        min_days = float("inf")
+        for _ in range(120):
+            tick_time = generator._current_tick_time(simulation.snapshot())
+            generator._rng = random.Random(1337)
+            eta = simulation.estimate_arrival(tick_time, "STN-PLANET-EARTH", "STN-PLANET-MARS")
+            trip_days = (eta - tick_time).total_seconds() / 86400.0
+            min_days = min(min_days, trip_days)
+            generator._advance_sim_time(tick_time, 3 * 86400.0)
+
+        assert 3.0 <= min_days <= 4.2
+    finally:
+        app.config["space_store"].close()
+
+
+def test_calibrated_neptune_pluto_far_separation_reaches_about_180_days(monkeypatch, tmp_path):
+    db_path = tmp_path / "travel_time_far_calibration.db"
+    monkeypatch.setenv("SPACE_TRAFFIC_DB_PATH", str(db_path))
+    monkeypatch.setenv("SPACE_TRAFFIC_API_KEY", "test-key")
+    monkeypatch.setenv("SPACE_TRAFFIC_DISABLE_GENERATOR", "true")
+    monkeypatch.setenv("SPACE_TRAFFIC_DETERMINISTIC_MODE", "true")
+    monkeypatch.setenv("SPACE_TRAFFIC_DETERMINISTIC_SEED", "424242")
+    monkeypatch.setenv("SPACE_TRAFFIC_ORBITAL_DISTANCE_MODEL_ENABLED", "true")
+    monkeypatch.setenv("SPACE_TRAFFIC_ORBITAL_DISTANCE_MULTIPLIER_MIN", "0.7")
+    monkeypatch.setenv("SPACE_TRAFFIC_ORBITAL_DISTANCE_MULTIPLIER_MAX", "1.3")
+
+    app = create_app()
+    try:
+        simulation = app.config["space_simulation"]
+        generator = simulation._generator
+        runtime_state = simulation.snapshot()
+        generator._ensure_rng(runtime_state)
+
+        max_days = 0.0
+        for _ in range(200):
+            tick_time = generator._current_tick_time(simulation.snapshot())
+            generator._rng = random.Random(1337)
+            eta = simulation.estimate_arrival(tick_time, "STN-PLANET-NEPTUNE", "STN-PLANET-PLUTO")
+            trip_days = (eta - tick_time).total_seconds() / 86400.0
+            max_days = max(max_days, trip_days)
+            generator._advance_sim_time(tick_time, 7 * 86400.0)
+
+        assert 165.0 <= max_days <= 200.0
     finally:
         app.config["space_store"].close()
 

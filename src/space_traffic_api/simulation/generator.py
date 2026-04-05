@@ -29,6 +29,9 @@ from .scenarios import SCENARIO_DEFINITIONS
 
 
 class DepartureGenerator(threading.Thread):
+    _TRAVEL_DURATION_BASE_DAYS = 5.2
+    _TRAVEL_DURATION_EXPONENT = 1.11
+
     def __init__(
         self,
         store: SQLiteStore,
@@ -810,15 +813,27 @@ class DepartureGenerator(threading.Thread):
         runtime_snap = self._runtime.snapshot()
         src_group = self._distance_groups.get(source, 5)
         dst_group = self._distance_groups.get(destination, 5)
-        base_hops = abs(src_group - dst_group)
-        hops = self._departure_hops_with_orbital_state(
+        base_distance_units = abs(src_group - dst_group)
+        distance_units = self._departure_hops_with_orbital_state(
             source_station_id=source,
             destination_station_id=destination,
-            base_hops=float(base_hops),
+            base_hops=float(base_distance_units),
             runtime_snap=runtime_snap,
         )
-        hours = (6 + (hops * 8) + self._rng.uniform(0.5, 12.0)) / self._ship_speed_multiplier
-        return departure_time + timedelta(hours=hours)
+        days = self._travel_duration_days_from_distance_units(distance_units)
+
+        # Keep deterministic but bounded micro-variation to avoid all trips being identical.
+        days *= 1.0 + self._rng.uniform(-0.03, 0.03)
+
+        # Legacy multiplier compatibility: historical default was 84.0, which now maps to 1.0x.
+        speed_factor = max(0.05, float(self._ship_speed_multiplier) / 84.0)
+        days /= speed_factor
+
+        return departure_time + timedelta(days=days)
+
+    def _travel_duration_days_from_distance_units(self, distance_units: float) -> float:
+        units = max(0.2, float(distance_units))
+        return self._TRAVEL_DURATION_BASE_DAYS * (units ** self._TRAVEL_DURATION_EXPONENT)
 
     def _departure_hops_with_orbital_state(
         self,
@@ -827,8 +842,19 @@ class DepartureGenerator(threading.Thread):
         base_hops: float,
         runtime_snap: dict[str, Any],
     ) -> float:
+        src_anchor = self._station_orbital_anchor.get(source_station_id)
+        dst_anchor = self._station_orbital_anchor.get(destination_station_id)
+        if not src_anchor or not dst_anchor:
+            return max(0.2, base_hops)
+
+        src_state = self._orbital_state.get(src_anchor)
+        dst_state = self._orbital_state.get(dst_anchor)
+        if not src_state or not dst_state:
+            return max(0.2, base_hops)
+
         if not runtime_snap.get("orbital_distance_model_enabled"):
-            return base_hops
+            # Feature-off baseline uses static outer-system weighting (phase independent).
+            return max(0.2, (src_state.radius_scale + dst_state.radius_scale) / 2.0)
 
         try:
             min_multiplier = float(runtime_snap.get("orbital_distance_multiplier_min", 0.7) or 0.7)
@@ -844,16 +870,6 @@ class DepartureGenerator(threading.Thread):
         if max_multiplier < min_multiplier:
             max_multiplier = min_multiplier
 
-        src_anchor = self._station_orbital_anchor.get(source_station_id)
-        dst_anchor = self._station_orbital_anchor.get(destination_station_id)
-        if not src_anchor or not dst_anchor:
-            return base_hops
-
-        src_state = self._orbital_state.get(src_anchor)
-        dst_state = self._orbital_state.get(dst_anchor)
-        if not src_state or not dst_state:
-            return base_hops
-
         radial_distance = math.hypot(dst_state.x - src_state.x, dst_state.y - src_state.y)
         min_distance = abs(src_state.radius_scale - dst_state.radius_scale)
         max_distance = src_state.radius_scale + dst_state.radius_scale
@@ -861,7 +877,7 @@ class DepartureGenerator(threading.Thread):
         normalized_distance = max(0.0, min(1.0, (radial_distance - min_distance) / spread))
         multiplier = min_multiplier + ((max_multiplier - min_multiplier) * normalized_distance)
 
-        return base_hops * multiplier
+        return max(0.2, radial_distance * multiplier)
 
     def _apply_faults(self, event: dict[str, Any], state: dict[str, Any]) -> None:
         apply_faults(
