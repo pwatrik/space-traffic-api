@@ -29,7 +29,7 @@ class SimulationEngine:
         interval_seconds: float,
         wait_seconds: float,
         startup_merchants_launched: bool,
-        launch_startup_merchants: Callable[[dict[str, Any], dict[str, Any] | None, datetime], None],
+        launch_startup_merchants: Callable[[dict[str, Any], dict[str, Any] | None, datetime], bool | None],
         complete_arrivals: Callable[[datetime], list[dict[str, Any]]],
         apply_lifecycle: Callable[[float, datetime, dict[str, Any] | None, list[dict[str, Any]]], None],
         is_globally_interrupted: Callable[[dict[str, Any] | None], bool],
@@ -48,8 +48,8 @@ class SimulationEngine:
 
         launched = startup_merchants_launched
         if not launched:
-            launch_startup_merchants(state, scenario, tick_time)
-            launched = True
+            launch_result = launch_startup_merchants(state, scenario, tick_time)
+            launched = bool(launch_result) if isinstance(launch_result, bool) else True
 
         arrived_ships = complete_arrivals(tick_time)
         apply_lifecycle(interval_seconds, tick_time, scenario, arrived_ships)

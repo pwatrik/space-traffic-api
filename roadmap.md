@@ -275,6 +275,20 @@ Introduce a dedicated simulation clock and a clean wall-clock vs simulated-time 
 
 ## Milestone 3: Engine Realism and Determinism Depth
 Estimated effort: 10-14 sessions
+Status: In progress
+
+### Progress
+- Completed: Session 1 profiling harness added for routing, ship selection, and generator throughput/latency guardrails.
+- Completed: Session 1 identified startup launch burst and economy snapshot refresh as primary hot paths under high-rate scenarios.
+- Completed: Session 2 integrated station economy cache into generator lifecycle refresh path.
+- Completed: Session 2 batched startup merchant launches across ticks to reduce long single-tick stalls.
+- Completed: Session 2 regression validation for determinism/API suites after scheduler hot-path changes.
+- Completed: Session 3 integrated cached destination-picking path and reduced duplicate available-ship list queries in generator hot loops.
+- Completed: Session 3 preserved deterministic/golden contracts after optimization-path parity fix.
+- Completed: Session 4 reduced lifecycle query churn by eliminating per-stage active-ship re-queries inside generator ticks.
+- Completed: Session 4 mutation-aware active-ship filtering validated against determinism/golden/API/scenario/pirate suites.
+- Completed: Session 5 reduced per-event retention overhead by throttling departure trimming to periodic checks.
+- Completed: Session 5 tuned startup launch batch size for smoother tick latency while preserving deterministic output contracts.
 
 ### Goal
 Upgrade engine internals so advanced simulation behavior remains stable, reproducible, and performant.
