@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import queue
-import threading
-import time
 from datetime import datetime
 from typing import Any
 
@@ -32,32 +30,15 @@ class SimulationService:
             ships=ships,
             catalog=catalog,
         )
-        self._clock_stop_event = threading.Event()
-        self._clock_thread: threading.Thread | None = None
 
     def start(self) -> None:
-        if self._clock_thread is None or not self._clock_thread.is_alive():
-            self._clock_stop_event.clear()
-            self._clock_thread = threading.Thread(target=self._run_clock, daemon=True)
-            self._clock_thread.start()
         if not self._generator.is_alive():
             self._generator.start()
 
     def stop(self, timeout: float = 2.0) -> None:
-        self._clock_stop_event.set()
         if self._generator.is_alive():
             self._generator.stop()
             self._generator.join(timeout=timeout)
-        if self._clock_thread is not None and self._clock_thread.is_alive():
-            self._clock_thread.join(timeout=timeout)
-
-    def _run_clock(self) -> None:
-        last = time.monotonic()
-        while not self._clock_stop_event.wait(timeout=0.1):
-            now = time.monotonic()
-            elapsed = max(0.0, now - last)
-            last = now
-            self._runtime.advance_simulation_clock(elapsed)
 
     def is_running(self) -> bool:
         return self._generator.is_alive()
