@@ -165,6 +165,8 @@ Status: In progress
 - Completed: Session 1 API/docs notes for timing-field interpretation and simulation_time_scale ratio semantics.
 - Completed: Session 2 dedicated simulation clock loop added in service/runtime path; generator now consumes simulation_now and no longer advances simulation clock per departure tick.
 - Completed: Session 2 regression coverage for wall-clock-driven simulation_now advancement and simulation_time_scale ratio behavior.
+- Completed: Session 3 startup/reset semantics now anchor to configurable deterministic_start_time independent of deterministic mode (default remains 2150-01-01T00:00:00Z).
+- Completed: Session 3 runtime/UI controls for adjustable epoch baseline and compression ratio wording; API validation for deterministic_start_time patching.
 
 ### Goal
 Introduce a dedicated simulation clock and a clean wall-clock vs simulated-time contract so long-haul travel, orbital movement, economy, and timed events all advance on the same compressed simulation timeline.
@@ -221,7 +223,7 @@ Introduce a dedicated simulation clock and a clean wall-clock vs simulated-time 
 ### Suggested Session Breakdown
 1. Session 1: formalize time model, rename/clarify clock semantics, and add roadmap/API notes. (completed)
 2. Session 2: implement dedicated simulation clock path and decouple it from generator cadence. (completed)
-3. Session 3: change default epoch/reset behavior to `2100-01-01T00:00:00Z`; add config/runtime/UI controls for compression ratio.
+3. Session 3: keep default epoch/reset behavior at `2150-01-01T00:00:00Z`, make epoch adjustable, and add config/runtime/UI controls for compression ratio. (completed)
 4. Session 4: replace hop-based ETA estimation with calibrated distance-based travel duration.
 5. Session 5: split wall-clock vs simulated timestamps in departures/control events/ship state serialization.
 6. Session 6: add deterministic regression tests and route-duration calibration tests.

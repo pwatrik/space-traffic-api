@@ -46,7 +46,7 @@ class RuntimeState:
             "orbital_distance_model_enabled": config.orbital_distance_model_enabled,
             "orbital_distance_multiplier_min": config.orbital_distance_multiplier_min,
             "orbital_distance_multiplier_max": config.orbital_distance_multiplier_max,
-            "simulation_now": _parse_deterministic_start(config.deterministic_start_time).isoformat() if config.deterministic_mode else datetime.now(UTC).isoformat(),
+            "simulation_now": _parse_deterministic_start(config.deterministic_start_time).isoformat(),
             "active_scenario": None,
             "active_faults": {},
                        "pirate_spawn_probability_per_day": None,
@@ -155,6 +155,22 @@ class RuntimeState:
             except (TypeError, ValueError):
                 scale = 1.0
             self._state["simulation_time_scale"] = max(0.1, scale)
+
+            if "deterministic_start_time" in patch:
+                raw_start = self._state.get("deterministic_start_time")
+                if not isinstance(raw_start, str) or not raw_start.strip():
+                    raise ValueError("deterministic_start_time must be a non-empty ISO-8601 timestamp")
+                try:
+                    parsed_start = datetime.fromisoformat(raw_start.replace("Z", "+00:00"))
+                    if parsed_start.tzinfo is None:
+                        parsed_start = parsed_start.replace(tzinfo=UTC)
+                except ValueError as exc:
+                    raise ValueError(
+                        "deterministic_start_time must be ISO-8601 (example: 2150-01-01T00:00:00Z)"
+                    ) from exc
+                self._state["deterministic_start_time"] = parsed_start.astimezone(UTC).isoformat()
+                # Applying the baseline start time immediately allows operators to re-anchor the simulation clock.
+                self._state["simulation_now"] = self._state["deterministic_start_time"]
 
             try:
                 econ_weight = float(self._state.get("economy_preference_weight", 0.15))
@@ -334,12 +350,9 @@ class RuntimeState:
                     "next_spawn_earliest_at": None,
                     "affected_station_ids": [],
                 }
-            if self._state.get("deterministic_mode"):
-                deterministic_start = self._state.get("deterministic_start_time")
-                simulation_now_dt = _parse_deterministic_start(deterministic_start)
-                self._state["simulation_now"] = simulation_now_dt.isoformat()
-            else:
-                self._state["simulation_now"] = now.isoformat()
+            deterministic_start = self._state.get("deterministic_start_time")
+            simulation_now_dt = _parse_deterministic_start(deterministic_start)
+            self._state["simulation_now"] = simulation_now_dt.isoformat()
             self._state["last_reset_at"] = now.isoformat()
             self._persist_unlocked()
             self._emit_control_event_unlocked(

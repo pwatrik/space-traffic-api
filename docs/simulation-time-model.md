@@ -29,8 +29,8 @@ This document defines the current contract and target contract for simulation ti
 - Future naming cleanup may add an alias field, but simulation_time_scale remains supported for the full Milestone 2.6 rollout.
 
 2. Epoch target (planned for Session 3)
-- Product target startup/reset epoch: 2100-01-01T00:00:00Z.
-- Current default remains unchanged in code for now; this session documents the target contract only.
+- Default startup/reset epoch remains 2150-01-01T00:00:00Z.
+- Epoch is operator-adjustable at runtime via deterministic_start_time.
 
 3. Time-field interpretation guidance
 - departure_time and est_arrival_time are simulated timeline values.
@@ -55,6 +55,13 @@ This document defines the current contract and target contract for simulation ti
 - RuntimeState advances simulation_now by elapsed_wall_seconds * simulation_time_scale.
 - DepartureGenerator now reads simulation_now from runtime state each tick.
 - Generator no longer advances simulation_now after each departure tick; manual _advance_sim_time helper remains for tests.
+
+## Session 3 Implementation Notes
+
+- Startup/reset semantics now use deterministic_start_time baseline independent of deterministic_mode.
+- Default baseline remains 2150-01-01T00:00:00Z.
+- deterministic_start_time is adjustable via PATCH /config with ISO-8601 validation.
+- Applying deterministic_start_time re-anchors simulation_now immediately.
 
 ## API Documentation Requirements (Session 1)
 

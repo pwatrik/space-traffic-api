@@ -676,6 +676,7 @@ paths:
                 deterministic_start_time:
                   type: string
                   format: date-time
+                  description: Simulated epoch baseline used on startup/reset and when re-anchoring simulation_now.
                 simulation_time_scale:
                   type: number
                   minimum: 0.1

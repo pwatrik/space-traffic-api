@@ -384,3 +384,75 @@ def test_control_reset_rewinds_orbital_diagnostics(monkeypatch):
             app.config["space_store"].close()
 
 
+def test_config_patch_allows_adjusting_start_time_and_reanchors_simulation_now(monkeypatch):
+    with TemporaryDirectory() as tmp:
+        monkeypatch.setenv("SPACE_TRAFFIC_DB_PATH", f"{tmp}/test.db")
+        monkeypatch.setenv("SPACE_TRAFFIC_API_KEY", "test-key")
+        monkeypatch.setenv("SPACE_TRAFFIC_DISABLE_GENERATOR", "true")
+
+        app = create_app()
+        client = app.test_client()
+        headers = {"X-API-Key": "test-key"}
+        try:
+            patched = client.patch(
+                "/config",
+                headers=headers,
+                json={"deterministic_start_time": "2155-02-03T04:05:06Z"},
+            )
+            assert patched.status_code == 200
+            payload = patched.get_json()
+            assert payload["deterministic_start_time"].startswith("2155-02-03T04:05:06")
+            assert payload["simulation_now"].startswith("2155-02-03T04:05:06")
+        finally:
+            app.config["space_store"].close()
+
+
+def test_config_patch_rejects_invalid_start_time(monkeypatch):
+    with TemporaryDirectory() as tmp:
+        monkeypatch.setenv("SPACE_TRAFFIC_DB_PATH", f"{tmp}/test.db")
+        monkeypatch.setenv("SPACE_TRAFFIC_API_KEY", "test-key")
+        monkeypatch.setenv("SPACE_TRAFFIC_DISABLE_GENERATOR", "true")
+
+        app = create_app()
+        client = app.test_client()
+        headers = {"X-API-Key": "test-key"}
+        try:
+            response = client.patch(
+                "/config",
+                headers=headers,
+                json={"deterministic_start_time": "not-a-time"},
+            )
+            assert response.status_code == 400
+            assert "deterministic_start_time" in response.get_json()["error"]
+        finally:
+            app.config["space_store"].close()
+
+
+def test_control_reset_uses_start_time_even_when_deterministic_mode_off(monkeypatch):
+    with TemporaryDirectory() as tmp:
+        monkeypatch.setenv("SPACE_TRAFFIC_DB_PATH", f"{tmp}/test.db")
+        monkeypatch.setenv("SPACE_TRAFFIC_API_KEY", "test-key")
+        monkeypatch.setenv("SPACE_TRAFFIC_DISABLE_GENERATOR", "true")
+        monkeypatch.setenv("SPACE_TRAFFIC_DETERMINISTIC_MODE", "false")
+        monkeypatch.setenv("SPACE_TRAFFIC_DETERMINISTIC_START_TIME", "2150-01-01T00:00:00Z")
+
+        app = create_app()
+        client = app.test_client()
+        headers = {"X-API-Key": "test-key"}
+        try:
+            patch_resp = client.patch(
+                "/config",
+                headers=headers,
+                json={"deterministic_start_time": "2160-01-02T03:04:05Z"},
+            )
+            assert patch_resp.status_code == 200
+
+            reset = client.post("/control/reset", headers=headers, json={"seed": 5150})
+            assert reset.status_code == 200
+            runtime = reset.get_json()["runtime"]
+            assert runtime["deterministic_mode"] is False
+            assert runtime["simulation_now"].startswith("2160-01-02T03:04:05")
+        finally:
+            app.config["space_store"].close()
+
+

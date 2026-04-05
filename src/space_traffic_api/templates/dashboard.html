@@ -68,11 +68,12 @@
               <label class="check-label"><input type="checkbox" id="cfg-deterministic"> Deterministic mode</label>
               <label class="check-label"><input type="checkbox" id="cfg-orbital-model"> Orbital model</label>
               <label>Seed <input id="cfg-seed" type="number" placeholder="1337"></label>
-              <label>Time Scale <input id="cfg-time-scale" type="number" min="0.1" step="0.1" value="1.0"></label>
+              <label>Sim Start (ISO) <input id="cfg-start-time" type="text" placeholder="2150-01-01T00:00:00Z"></label>
+              <label>Compression Ratio <input id="cfg-time-scale" type="number" min="0.1" step="0.1" value="1.0"></label>
               <button class="btn" id="cfg-save">Apply</button>
               <button class="btn danger" id="ctl-reset">Reset</button>
             </div>
-            <p class="meta">Scale controls simulated clock speed. `1.0` = real time, `10.0` = 10x faster simulation time.</p>
+            <p class="meta">Compression ratio controls simulated clock speed. `1.0` = real time, `10.0` = 10x faster simulation time.</p>
             <p class="meta control-status-row"><span class="status-indicator idle" id="control-status">idle</span><span id="control-status-detail">No pending control actions.</span></p>
           </div>
 

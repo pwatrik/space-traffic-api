@@ -203,8 +203,11 @@ def create_api_blueprint(
     @bp.patch("/config")
     def patch_config() -> Response:
         payload = request.get_json(silent=True) or {}
-        updated = simulation.patch_config(payload)
-        return jsonify(updated)
+        try:
+            updated = simulation.patch_config(payload)
+            return jsonify(updated)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
 
     @bp.get("/scenarios")
     def get_scenarios() -> Response:
