@@ -158,7 +158,7 @@ Introduce a rough orbital-position distance model that changes over simulated ti
 
 ## Milestone 2.6 Simulation Time Model
 Estimated effort: 6-9 sessions
-Status: In progress
+Status: Complete
 
 ### Progress
 - Completed: Session 1 time-model contract formalized (wall-clock vs simulated-time semantics, migration-safe naming guidance).
@@ -175,19 +175,21 @@ Status: In progress
 - Completed: Session 6 route-duration calibration snapshot regression added and validated alongside golden determinism contract.
 - Completed: Session 7 live dashboard/operator control validation against running simulation for config patching, scenario/fault activation/deactivation, reset semantics, and control-event emission.
 - Completed: Session 7 live compression-ratio validation confirms faster simulation_now advancement after runtime scale increase.
+- Completed: Session 8-9 buffer cleanup aligned milestone/docs contract language with shipped behavior (2150 default epoch, operator-adjustable start time).
+- Completed: Session 8-9 broader regression sweep (live controls, lifecycle, simulation clock, travel-time calibration, API timing split, golden snapshot) with all targeted suites passing.
 
 ### Goal
 Introduce a dedicated simulation clock and a clean wall-clock vs simulated-time contract so long-haul travel, orbital movement, economy, and timed events all advance on the same compressed simulation timeline.
 
 ### Why This Is Needed
-- Current simulated time advancement is still coupled to departure-generation cadence.
-- Current ETA calculation is still hop-based and far too short for the target travel envelope.
-- Current API payloads mix simulated timestamps with event-observed timestamps, which makes external consumption ambiguous.
-- The desired default compression ratio and startup epoch are now product requirements rather than optional tuning details.
+- Decouple simulated-time progression from departure-generation cadence so all subsystems share one clock authority.
+- Recalibrate travel durations to realistic route envelopes for short and long-haul trajectories.
+- Split simulated-time and wall-clock timestamps so API consumers can reason about event timing unambiguously.
+- Lock default epoch/compression semantics as explicit product behavior while preserving runtime operator controls.
 
 ### Scope Boundaries (Locked)
 - Include a dedicated simulation clock service or equivalent clock loop decoupled from event generation.
-- Include a fixed simulation epoch starting at `2100-01-01T00:00:00Z` on startup and reset.
+- Include a default simulation epoch of `2150-01-01T00:00:00Z` on startup and reset, with runtime adjustability.
 - Include a user-adjustable time-compression ratio in UI and config.
 - Include recalibrated travel durations for representative long/short routes.
 - Include explicit wall-clock and simulated-time fields in API responses where timing matters.
@@ -200,8 +202,9 @@ Introduce a dedicated simulation clock and a clean wall-clock vs simulated-time 
 - Ensure orbital movement, ship travel, scenario/fault expiry, pirate lifecycle, and economy drift all consume the same simulated delta.
 
 2. Fixed epoch and reset semantics
-- Change the default simulation start to `2100-01-01T00:00:00Z`.
+- Keep the default simulation start at `2150-01-01T00:00:00Z`.
 - Make startup/reset semantics independent of deterministic RNG mode.
+- Support operator-adjustable deterministic_start_time at runtime with immediate re-anchoring.
 - Preserve deterministic reproducibility when seed + config + start time are fixed.
 
 3. Time-compression controls
@@ -221,7 +224,7 @@ Introduce a dedicated simulation clock and a clean wall-clock vs simulated-time 
 - Update serializers, docs, and tests so consumers can distinguish the two clearly.
 
 ### Definition of Done
-- Simulation starts at `2100-01-01T00:00:00Z` on startup/reset unless explicitly overridden.
+- Simulation starts at `2150-01-01T00:00:00Z` on startup/reset unless explicitly overridden.
 - Simulation clock progression is no longer implicitly derived from departure cadence.
 - Orbits, ship transit, timed events, and economy all advance from the same simulated clock delta.
 - Default compression yields roughly 180 simulated days in about 3 wall-clock hours.
@@ -236,7 +239,7 @@ Introduce a dedicated simulation clock and a clean wall-clock vs simulated-time 
 5. Session 5: split wall-clock vs simulated timestamps in departures/control events/ship state serialization. (completed)
 6. Session 6: add deterministic regression tests and route-duration calibration tests. (completed)
 7. Session 7: validate dashboard behavior and operator controls against live simulation. (completed)
-8. Session 8-9 (buffer): tuning, migration cleanup, and documentation updates.
+8. Session 8-9 (buffer): tuning, migration cleanup, and documentation updates. (completed)
 
 ## Milestone 3: Engine Realism and Determinism Depth
 Estimated effort: 10-14 sessions

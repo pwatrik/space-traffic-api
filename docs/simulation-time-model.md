@@ -28,7 +28,7 @@ This document defines the current contract and target contract for simulation ti
 - simulation_time_scale is defined as sim-to-wall ratio semantics (higher means faster simulated progression).
 - Future naming cleanup may add an alias field, but simulation_time_scale remains supported for the full Milestone 2.6 rollout.
 
-2. Epoch target (planned for Session 3)
+2. Epoch target (implemented in Session 3)
 - Default startup/reset epoch remains 2150-01-01T00:00:00Z.
 - Epoch is operator-adjustable at runtime via deterministic_start_time.
 
@@ -44,7 +44,7 @@ This document defines the current contract and target contract for simulation ti
 ## Planned Migration Sequence
 
 1. Session 2: introduce dedicated simulation clock loop and decouple progression from generation cadence. (implemented)
-2. Session 3: move default epoch/reset behavior to 2100-01-01T00:00:00Z and expose ratio controls cleanly.
+2. Session 3: keep default epoch/reset behavior at 2150-01-01T00:00:00Z, expose ratio controls cleanly, and support runtime-adjustable deterministic_start_time.
 3. Session 4: recalibrate distance-driven travel durations against target route envelopes.
 4. Session 5: split wall-clock and simulated-time fields in API payloads.
 5. Session 6+: add regression and calibration coverage, then tune.
