@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import queue
-import threading
-import time
 from datetime import datetime
 from typing import Any
 
@@ -32,8 +30,6 @@ class SimulationService:
             ships=ships,
             catalog=catalog,
         )
-        self._clock_stop_event = threading.Event()
-        self._clock_thread: threading.Thread | None = None
 
     def start(self) -> None:
         self._start_clock_thread()
