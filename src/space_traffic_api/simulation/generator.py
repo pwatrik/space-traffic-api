@@ -70,6 +70,8 @@ class DepartureGenerator(threading.Thread):
         self._sim_time: datetime | None = None
         self._event_counter = 0
         self._last_event_uid = ""
+        self._next_retention_trim_at = 0.0
+        self._retention_trim_interval_seconds = 1.0
         self._next_db_size_check_at = 0.0
         self._next_ship_sequence = self._store.max_ship_sequence() + 1
         self._age_update_accumulator_days: float = 0.0
@@ -88,7 +90,7 @@ class DepartureGenerator(threading.Thread):
         self._last_tick_completed_at: str | None = None
         self._departures_window_seconds = 60.0
         self._departure_timestamps: deque[float] = deque()
-        self._startup_launch_batch_size = 32
+        self._startup_launch_batch_size = 24
         self._startup_launch_queue: deque[dict[str, Any]] = deque()
 
     def stop(self) -> None:
@@ -664,12 +666,19 @@ class DepartureGenerator(threading.Thread):
                 rng=self._rng,
                 magnitude=float(state.get("economy_departure_impact_magnitude", 0.012) or 0.012),
             )
-            self._store.trim_departures(state["retention_max_rows"])
         except sqlite3.ProgrammingError:
             self._stop_event.set()
             return
 
         now_monotonic = time.monotonic()
+        if now_monotonic >= self._next_retention_trim_at:
+            try:
+                self._store.trim_departures(state["retention_max_rows"])
+            except sqlite3.ProgrammingError:
+                self._stop_event.set()
+                return
+            self._next_retention_trim_at = now_monotonic + self._retention_trim_interval_seconds
+
         if now_monotonic >= self._next_db_size_check_at:
             db_max_size_mb = int(state.get("db_max_size_mb", 512))
             try:

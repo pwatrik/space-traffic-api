@@ -287,6 +287,8 @@ Status: In progress
 - Completed: Session 3 preserved deterministic/golden contracts after optimization-path parity fix.
 - Completed: Session 4 reduced lifecycle query churn by eliminating per-stage active-ship re-queries inside generator ticks.
 - Completed: Session 4 mutation-aware active-ship filtering validated against determinism/golden/API/scenario/pirate suites.
+- Completed: Session 5 reduced per-event retention overhead by throttling departure trimming to periodic checks.
+- Completed: Session 5 tuned startup launch batch size for smoother tick latency while preserving deterministic output contracts.
 
 ### Goal
 Upgrade engine internals so advanced simulation behavior remains stable, reproducible, and performant.
