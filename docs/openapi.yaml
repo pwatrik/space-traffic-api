@@ -161,9 +161,11 @@ components:
         departure_time:
           type: [string, "null"]
           format: date-time
+          description: Simulated timeline departure timestamp.
         est_arrival_time:
           type: [string, "null"]
           format: date-time
+          description: Simulated timeline estimated arrival timestamp sampled at departure creation time.
         ship_age_days:
           type: number
           format: float
@@ -171,6 +173,7 @@ components:
         updated_at:
           type: string
           format: date-time
+          description: Runtime update/persistence timestamp (transitional until explicit wall-clock split lands).
 
     Departure:
       type: object
@@ -186,6 +189,7 @@ components:
         departure_time:
           type: string
           format: date-time
+          description: Simulated timeline departure timestamp.
         ship_id:
           type: [string, "null"]
           example: SHIP-00042
@@ -198,6 +202,7 @@ components:
         est_arrival_time:
           type: [string, "null"]
           format: date-time
+          description: Simulated timeline estimated arrival timestamp.
         scenario:
           type: [string, "null"]
           description: Active scenario name at time of departure, or null.
@@ -225,6 +230,7 @@ components:
         event_time:
           type: string
           format: date-time
+          description: Event timestamp used by current runtime path (explicit wall-clock/simulated split planned).
         event_type:
           type: string
           enum: [control, scenario, fault, lifecycle, pirate]
@@ -610,6 +616,18 @@ paths:
                     type: boolean
                   deterministic_seed:
                     type: [integer, "null"]
+                  deterministic_start_time:
+                    type: string
+                    format: date-time
+                    description: Seeded simulated start timestamp (used in deterministic mode).
+                  simulation_now:
+                    type: string
+                    format: date-time
+                    description: Current simulated timeline timestamp.
+                  simulation_time_scale:
+                    type: number
+                    minimum: 0.1
+                    description: Sim-to-wall ratio semantics (higher means faster simulated progression).
                   retention_max_rows:
                     type: integer
                   db_max_size_mb:
@@ -655,6 +673,12 @@ paths:
                   type: boolean
                 deterministic_seed:
                   type: integer
+                deterministic_start_time:
+                  type: string
+                  format: date-time
+                simulation_time_scale:
+                  type: number
+                  minimum: 0.1
                 db_max_size_mb:
                   type: integer
                   minimum: 50
