@@ -8,7 +8,7 @@ This module improves the generator's hot paths by:
 Usage: Add these optimizations to generator.py in the _apply_lifecycle method.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 
 
@@ -72,6 +72,10 @@ class StationEconomyCache:
             self._cached_keys.add(station_id)
 
         self._last_refresh_at = datetime.now()
+
+    def refresh_batch(self, store: Any) -> None:
+        """Public single-shot refresh entrypoint."""
+        self._refresh_batch(store)
 
     def get_economy_weight(
         self,

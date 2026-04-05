@@ -15,6 +15,7 @@ from ..seed_data import load_naming_config, orbital_anchor_body_for_station, sta
 from ..store import SQLiteStore
 from .engine.departure_builder import create_departure_event
 from .engine.fault_injector import apply_faults
+from .engine.optimization import StationEconomyCache
 from .engine.orbital_state import OrbitalBodyState, advance_orbital_body_state, initialize_orbital_body_state
 from .engine.routing import pick_destination
 from .engine.ship_selector import select_ship
@@ -75,6 +76,7 @@ class DepartureGenerator(threading.Thread):
         self._age_update_accumulator_days: float = 0.0
         self._economy_snapshot_accumulator_days: float = 0.0
         self._economy_snapshot_refresh_interval_days: float = 1.0 / 24.0  # once per simulated hour
+        self._station_economy_cache = StationEconomyCache(self._station_lookup)
         self._startup_merchants_launched = False
         self._engine = SimulationEngine()
         self._metrics_lock = threading.Lock()
@@ -86,6 +88,8 @@ class DepartureGenerator(threading.Thread):
         self._last_tick_completed_at: str | None = None
         self._departures_window_seconds = 60.0
         self._departure_timestamps: deque[float] = deque()
+        self._startup_launch_batch_size = 32
+        self._startup_launch_queue: deque[dict[str, Any]] = deque()
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -198,6 +202,7 @@ class DepartureGenerator(threading.Thread):
             self._rng = random.Random(seed if det_mode else None)
             self._set_sim_time(state)
             self._initialize_orbital_state(state)
+            self._startup_launch_queue.clear()
             return
 
         reset_marker = state.get("last_reset_at")
@@ -210,6 +215,7 @@ class DepartureGenerator(threading.Thread):
             self._event_counter = 0
             self._last_event_uid = ""
             self._startup_merchants_launched = False
+            self._startup_launch_queue.clear()
 
     def _initialize_orbital_state(self, state: dict[str, Any]) -> None:
         seed = int(state.get("deterministic_seed", 424242) or 424242)
@@ -310,10 +316,12 @@ class DepartureGenerator(threading.Thread):
             rng=self._rng,
             magnitude=float(runtime_snap.get("economy_drift_magnitude", 1.0) or 1.0),
         )
-        self._economy_snapshot_accumulator_days += elapsed_days
-        if self._economy_snapshot_accumulator_days >= self._economy_snapshot_refresh_interval_days:
-            self._refresh_station_economy_snapshot()
-            self._economy_snapshot_accumulator_days = 0.0
+        self._economy_snapshot_accumulator_days, _ = self._station_economy_cache.refresh_if_needed(
+            store=self._store,
+            elapsed_days=elapsed_days,
+            refresh_interval_days=self._economy_snapshot_refresh_interval_days,
+            accumulator_days=self._economy_snapshot_accumulator_days,
+        )
 
         active_ships = self._store.list_active_ships_for_lifecycle()
         if not active_ships:
@@ -596,15 +604,23 @@ class DepartureGenerator(threading.Thread):
         state: dict[str, Any],
         scenario: dict[str, Any] | None,
         tick_time: datetime,
-    ) -> None:
-        candidates = [
-            ship
-            for ship in self._store.list_available_ships()
-            if ship.get("faction") == "merchant" and ship.get("current_station_id")
-        ]
-        self._rng.shuffle(candidates)
+    ) -> bool:
+        if not self._startup_launch_queue:
+            candidates = [
+                ship
+                for ship in self._store.list_available_ships()
+                if ship.get("faction") == "merchant" and ship.get("current_station_id")
+            ]
+            self._rng.shuffle(candidates)
+            self._startup_launch_queue = deque(candidates)
 
-        for ship in candidates:
+        if not self._startup_launch_queue:
+            return True
+
+        launches_remaining = min(self._startup_launch_batch_size, len(self._startup_launch_queue))
+        while launches_remaining > 0:
+            ship = self._startup_launch_queue.popleft()
+            launches_remaining -= 1
             src = ship["current_station_id"]
             dst = self._pick_destination(ship, src, scenario)
             if not dst:
@@ -625,6 +641,8 @@ class DepartureGenerator(threading.Thread):
 
             self._apply_faults(event, state)
             self._persist_and_publish_event(event, state)
+
+        return len(self._startup_launch_queue) == 0
 
     def _persist_and_publish_event(self, event: dict[str, Any], state: dict[str, Any]) -> None:
         try:
@@ -725,17 +743,8 @@ class DepartureGenerator(threading.Thread):
         )
 
     def _refresh_station_economy_snapshot(self) -> None:
-        rows, total = self._store.list_stations(limit=5000, order_by="id", order="asc")
-        if isinstance(total, int) and total > len(rows):
-            rows, _ = self._store.list_stations(limit=total, order_by="id", order="asc")
-        for row in rows:
-            station_id = str(row.get("id") or "")
-            if not station_id or station_id not in self._station_lookup:
-                continue
-            station = self._station_lookup[station_id]
-            station["economy_profile"] = row.get("economy_profile", {})
-            station["economy_state"] = row.get("economy_state", {})
-            station["economy_derived"] = row.get("economy_derived", {})
+        # Compatibility wrapper used by tests and diagnostics.
+        self._station_economy_cache.refresh_batch(self._store)
 
     def _station_accepts_size_class(self, station_id: str, ship_size_class: str) -> bool:
         station = self._station_lookup.get(station_id)
