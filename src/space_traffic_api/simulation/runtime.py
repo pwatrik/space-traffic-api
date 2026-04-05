@@ -378,21 +378,18 @@ class RuntimeState:
         with self._lock:
             self._state["simulation_now"] = now_iso
 
-    def advance_simulation_clock(self, elapsed_wall_seconds: float) -> str:
-        if elapsed_wall_seconds <= 0:
-            with self._lock:
-                return str(self._state.get("simulation_now", ""))
+    def advance_simulation_clock(self, elapsed_wall_seconds: float) -> None:
+        if elapsed_wall_seconds <= 0.0:
+            return
 
         with self._lock:
-            current = self._clock_now_unlocked()
             try:
-                scale = float(self._state.get("simulation_time_scale", 1.0))
+                scale = float(self._state.get("simulation_time_scale", 1.0) or 1.0)
             except (TypeError, ValueError):
                 scale = 1.0
-            scale = max(0.1, scale)
-            advanced = current + timedelta(seconds=elapsed_wall_seconds * scale)
-            self._state["simulation_now"] = advanced.isoformat()
-            return self._state["simulation_now"]
+            sim_delta_seconds = elapsed_wall_seconds * max(0.1, scale)
+            now = self._clock_now_unlocked()
+            self._state["simulation_now"] = (now + timedelta(seconds=sim_delta_seconds)).isoformat()
 
     def _persist_unlocked(self) -> None:
         self._store.set_control_state("runtime", self._state)

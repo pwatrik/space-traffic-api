@@ -789,15 +789,10 @@ class DepartureGenerator(threading.Thread):
 
     def _current_tick_time(self, state: dict[str, Any]) -> datetime:
         raw = state.get("simulation_now")
-        if isinstance(raw, str) and raw.strip():
-            try:
-                parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-                if parsed.tzinfo is None:
-                    parsed = parsed.replace(tzinfo=UTC)
-                self._sim_time = parsed
-                return parsed
-            except ValueError:
-                pass
+        parsed = self._parse_iso(raw)
+        if parsed is not None:
+            self._sim_time = parsed
+            return parsed
         if self._sim_time is None:
             self._set_sim_time(state)
         return self._sim_time
@@ -805,7 +800,6 @@ class DepartureGenerator(threading.Thread):
     def _advance_sim_time(self, tick_time: datetime, interval_seconds: float) -> None:
         advance_orbital_body_state(self._orbital_state, interval_seconds / 86400.0)
         self._sim_time = tick_time + timedelta(seconds=interval_seconds)
-        self._runtime.set_simulation_now(self._sim_time.isoformat())
 
     def estimate_arrival(self, departure_time: datetime, source: str, destination: str) -> datetime:
         if self._rng is None:
