@@ -173,6 +173,8 @@ Status: In progress
 - Completed: Session 5 storage/runtime paths now persist wall-clock timestamps (departures.created_at, control_events.created_at, ship_state.updated_at_wall).
 - Completed: Session 6 deterministic regression coverage for calibrated route durations across fresh app boots with fixed seed/start.
 - Completed: Session 6 route-duration calibration snapshot regression added and validated alongside golden determinism contract.
+- Completed: Session 7 live dashboard/operator control validation against running simulation for config patching, scenario/fault activation/deactivation, reset semantics, and control-event emission.
+- Completed: Session 7 live compression-ratio validation confirms faster simulation_now advancement after runtime scale increase.
 
 ### Goal
 Introduce a dedicated simulation clock and a clean wall-clock vs simulated-time contract so long-haul travel, orbital movement, economy, and timed events all advance on the same compressed simulation timeline.
@@ -233,7 +235,7 @@ Introduce a dedicated simulation clock and a clean wall-clock vs simulated-time 
 4. Session 4: replace hop-based ETA estimation with calibrated distance-based travel duration. (completed)
 5. Session 5: split wall-clock vs simulated timestamps in departures/control events/ship state serialization. (completed)
 6. Session 6: add deterministic regression tests and route-duration calibration tests. (completed)
-7. Session 7: validate dashboard behavior and operator controls against live simulation.
+7. Session 7: validate dashboard behavior and operator controls against live simulation. (completed)
 8. Session 8-9 (buffer): tuning, migration cleanup, and documentation updates.
 
 ## Milestone 3: Engine Realism and Determinism Depth
