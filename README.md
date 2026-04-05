@@ -64,6 +64,16 @@ Deprecation process:
 3. Add/adjust contract tests to ensure both old and replacement paths are validated during the deprecation window.
 4. Remove deprecated behavior only in a planned versioned release with migration notes.
 
+## Simulation Time Contract
+
+Milestone 2.6 introduces a dedicated time-model refactor. Session 1 defines naming and semantics so upcoming changes remain migration-safe.
+
+- Runtime config field `simulation_time_scale` should be treated as a sim-to-wall ratio (higher means faster simulated progression).
+- `departure_time` and `est_arrival_time` are simulated timeline timestamps.
+- Timestamp split hardening (explicit wall-clock vs simulated fields where needed) is planned in Milestone 2.6 Session 5.
+
+Detailed contract notes: [docs/simulation-time-model.md](docs/simulation-time-model.md)
+
 ## Release Smoke Gate
 
 - Script: `scripts/release_smoke_gate.py`
@@ -98,7 +108,6 @@ Report schema highlights:
 - Golden determinism contract test: `tests/test_golden_snapshot.py`
 - Golden capture helper: `scripts/capture_golden_snapshot.py`
 - Perf baseline script: `scripts/benchmark_deterministic.py`
-- Orbital scaling benchmark script: `scripts/benchmark_orbital_scaling.py`
 
 Refresh golden snapshot after intentional deterministic behavior changes:
 
@@ -110,12 +119,6 @@ Run baseline benchmark:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\benchmark_deterministic.py --events 10 --rate 300
-```
-
-Run orbital scaling benchmark matrix:
-
-```powershell
-.\.venv\Scripts\python.exe scripts\benchmark_orbital_scaling.py --output artifacts\orbital_benchmark_results.json
 ```
 
 Write benchmark output to a release artifact path:

@@ -29,6 +29,9 @@ from .scenarios import SCENARIO_DEFINITIONS
 
 
 class DepartureGenerator(threading.Thread):
+    _TRAVEL_DURATION_BASE_DAYS = 5.2
+    _TRAVEL_DURATION_EXPONENT = 1.11
+
     def __init__(
         self,
         store: SQLiteStore,
@@ -86,6 +89,7 @@ class DepartureGenerator(threading.Thread):
         self._last_tick_completed_at: str | None = None
         self._departures_window_seconds = 60.0
         self._departure_timestamps: deque[float] = deque()
+        self._last_tick_time: datetime | None = None
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -147,6 +151,12 @@ class DepartureGenerator(threading.Thread):
             simulation_time_scale = max(0.1, float(state.get("simulation_time_scale", 1.0) or 1.0))
             wait_seconds = interval_seconds / simulation_time_scale
             tick_time = self._current_tick_time(state)
+            elapsed_sim_seconds = interval_seconds
+            if self._last_tick_time is not None:
+                elapsed_sim_seconds = max(0.0, (tick_time - self._last_tick_time).total_seconds())
+            self._last_tick_time = tick_time
+            if elapsed_sim_seconds > 0.0:
+                advance_orbital_body_state(self._orbital_state, elapsed_sim_seconds / 86400.0)
 
             try:
                 result = self._engine.tick(
@@ -160,13 +170,18 @@ class DepartureGenerator(threading.Thread):
                     complete_arrivals=lambda t: self._store.complete_ship_arrivals_with_details(
                         t.isoformat(), now_iso=t.isoformat()
                     ),
-                    apply_lifecycle=self._apply_lifecycle,
+                    apply_lifecycle=lambda _interval, t, s, arrived: self._apply_lifecycle(
+                        elapsed_sim_seconds,
+                        t,
+                        s,
+                        arrived,
+                    ),
                     is_globally_interrupted=self._is_globally_interrupted,
                     build_event=self._build_event,
                     apply_faults=self._apply_faults,
                     delayed_insert_pause=lambda _event: self._stop_event.wait(timeout=1.5),
                     persist_and_publish_event=self._persist_and_publish_event,
-                    advance_sim_time=self._advance_sim_time,
+                    advance_sim_time=lambda _tick_time, _interval_seconds: None,
                 )
             except sqlite3.ProgrammingError as exc:
                 if "closed database" in str(exc).lower() or self._stop_event.is_set():
@@ -198,6 +213,7 @@ class DepartureGenerator(threading.Thread):
             self._rng = random.Random(seed if det_mode else None)
             self._set_sim_time(state)
             self._initialize_orbital_state(state)
+            self._last_tick_time = None
             return
 
         reset_marker = state.get("last_reset_at")
@@ -210,6 +226,7 @@ class DepartureGenerator(threading.Thread):
             self._event_counter = 0
             self._last_event_uid = ""
             self._startup_merchants_launched = False
+            self._last_tick_time = None
 
     def _initialize_orbital_state(self, state: dict[str, Any]) -> None:
         seed = int(state.get("deterministic_seed", 424242) or 424242)
@@ -231,16 +248,11 @@ class DepartureGenerator(threading.Thread):
         }
 
     def _set_sim_time(self, state: dict[str, Any]) -> None:
-        if state.get("deterministic_mode"):
-            raw = state.get("deterministic_start_time", "2150-01-01T00:00:00Z")
-            try:
-                self._sim_time = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-            except ValueError:
-                self._sim_time = datetime.now(UTC)
-            self._runtime.set_simulation_now(self._sim_time.isoformat())
-            return
-
-        self._sim_time = datetime.now(UTC)
+        raw = state.get("deterministic_start_time", "2150-01-01T00:00:00Z")
+        try:
+            self._sim_time = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            self._sim_time = datetime.now(UTC)
         self._runtime.set_simulation_now(self._sim_time.isoformat())
 
     def _effective_rate_bounds(
@@ -627,6 +639,7 @@ class DepartureGenerator(threading.Thread):
             self._persist_and_publish_event(event, state)
 
     def _persist_and_publish_event(self, event: dict[str, Any], state: dict[str, Any]) -> None:
+        event["created_at"] = datetime.now(UTC).isoformat()
         try:
             row_id = self._store.insert_departure(event)
         except sqlite3.ProgrammingError:
@@ -776,10 +789,15 @@ class DepartureGenerator(threading.Thread):
 
     def _current_tick_time(self, state: dict[str, Any]) -> datetime:
         raw = state.get("simulation_now")
-        parsed = self._parse_iso(raw)
-        if parsed is not None:
-            self._sim_time = parsed
-            return parsed
+        if isinstance(raw, str) and raw.strip():
+            try:
+                parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=UTC)
+                self._sim_time = parsed
+                return parsed
+            except ValueError:
+                pass
         if self._sim_time is None:
             self._set_sim_time(state)
         return self._sim_time
@@ -787,6 +805,7 @@ class DepartureGenerator(threading.Thread):
     def _advance_sim_time(self, tick_time: datetime, interval_seconds: float) -> None:
         advance_orbital_body_state(self._orbital_state, interval_seconds / 86400.0)
         self._sim_time = tick_time + timedelta(seconds=interval_seconds)
+        self._runtime.set_simulation_now(self._sim_time.isoformat())
 
     def estimate_arrival(self, departure_time: datetime, source: str, destination: str) -> datetime:
         if self._rng is None:
@@ -795,15 +814,27 @@ class DepartureGenerator(threading.Thread):
         runtime_snap = self._runtime.snapshot()
         src_group = self._distance_groups.get(source, 5)
         dst_group = self._distance_groups.get(destination, 5)
-        base_hops = abs(src_group - dst_group)
-        hops = self._departure_hops_with_orbital_state(
+        base_distance_units = abs(src_group - dst_group)
+        distance_units = self._departure_hops_with_orbital_state(
             source_station_id=source,
             destination_station_id=destination,
-            base_hops=float(base_hops),
+            base_hops=float(base_distance_units),
             runtime_snap=runtime_snap,
         )
-        hours = (6 + (hops * 8) + self._rng.uniform(0.5, 12.0)) / self._ship_speed_multiplier
-        return departure_time + timedelta(hours=hours)
+        days = self._travel_duration_days_from_distance_units(distance_units)
+
+        # Keep deterministic but bounded micro-variation to avoid all trips being identical.
+        days *= 1.0 + self._rng.uniform(-0.03, 0.03)
+
+        # Legacy multiplier compatibility: historical default was 84.0, which now maps to 1.0x.
+        speed_factor = max(0.05, float(self._ship_speed_multiplier) / 84.0)
+        days /= speed_factor
+
+        return departure_time + timedelta(days=days)
+
+    def _travel_duration_days_from_distance_units(self, distance_units: float) -> float:
+        units = max(0.2, float(distance_units))
+        return self._TRAVEL_DURATION_BASE_DAYS * (units ** self._TRAVEL_DURATION_EXPONENT)
 
     def _departure_hops_with_orbital_state(
         self,
@@ -812,8 +843,19 @@ class DepartureGenerator(threading.Thread):
         base_hops: float,
         runtime_snap: dict[str, Any],
     ) -> float:
+        src_anchor = self._station_orbital_anchor.get(source_station_id)
+        dst_anchor = self._station_orbital_anchor.get(destination_station_id)
+        if not src_anchor or not dst_anchor:
+            return max(0.2, base_hops)
+
+        src_state = self._orbital_state.get(src_anchor)
+        dst_state = self._orbital_state.get(dst_anchor)
+        if not src_state or not dst_state:
+            return max(0.2, base_hops)
+
         if not runtime_snap.get("orbital_distance_model_enabled"):
-            return base_hops
+            # Feature-off baseline uses static outer-system weighting (phase independent).
+            return max(0.2, (src_state.radius_scale + dst_state.radius_scale) / 2.0)
 
         try:
             min_multiplier = float(runtime_snap.get("orbital_distance_multiplier_min", 0.7) or 0.7)
@@ -829,16 +871,6 @@ class DepartureGenerator(threading.Thread):
         if max_multiplier < min_multiplier:
             max_multiplier = min_multiplier
 
-        src_anchor = self._station_orbital_anchor.get(source_station_id)
-        dst_anchor = self._station_orbital_anchor.get(destination_station_id)
-        if not src_anchor or not dst_anchor:
-            return base_hops
-
-        src_state = self._orbital_state.get(src_anchor)
-        dst_state = self._orbital_state.get(dst_anchor)
-        if not src_state or not dst_state:
-            return base_hops
-
         radial_distance = math.hypot(dst_state.x - src_state.x, dst_state.y - src_state.y)
         min_distance = abs(src_state.radius_scale - dst_state.radius_scale)
         max_distance = src_state.radius_scale + dst_state.radius_scale
@@ -846,7 +878,7 @@ class DepartureGenerator(threading.Thread):
         normalized_distance = max(0.0, min(1.0, (radial_distance - min_distance) / spread))
         multiplier = min_multiplier + ((max_multiplier - min_multiplier) * normalized_distance)
 
-        return base_hops * multiplier
+        return max(0.2, radial_distance * multiplier)
 
     def _apply_faults(self, event: dict[str, Any], state: dict[str, Any]) -> None:
         apply_faults(

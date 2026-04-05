@@ -10,7 +10,6 @@ _DEFAULT_IGNORE_FIELDS: frozenset[str] = frozenset(
     {
         "id",          # SQLite rowid — depends on insertion timing
         "created_at",  # wall-clock timestamp
-        "recorded_at_wall",  # wall-clock alias in API payloads
     }
 )
 

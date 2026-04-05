@@ -673,6 +673,7 @@ async function loadControlData() {
   );
   const seed = config.deterministic_seed;
   document.getElementById("cfg-seed").value = seed !== null && seed !== undefined ? String(seed) : "";
+  document.getElementById("cfg-start-time").value = config.deterministic_start_time ?? "";
   document.getElementById("cfg-time-scale").value = config.simulation_time_scale ?? 1.0;
   updateSimulationNow(config.simulation_now);
 
@@ -725,6 +726,7 @@ function bindControls() {
         const deterministicMode = document.getElementById("cfg-deterministic").checked;
         const orbitalModelEnabled = document.getElementById("cfg-orbital-model").checked;
         const seedRaw = document.getElementById("cfg-seed").value.trim();
+        const startTimeRaw = document.getElementById("cfg-start-time").value.trim();
         const timeScaleRaw = document.getElementById("cfg-time-scale").value.trim();
         const payload = {
           deterministic_mode: deterministicMode,
@@ -735,6 +737,9 @@ function bindControls() {
         }
         if (timeScaleRaw) {
           payload.simulation_time_scale = Number(timeScaleRaw);
+        }
+        if (startTimeRaw) {
+          payload.deterministic_start_time = startTimeRaw;
         }
 
         setControlStatus("pending", "Applying runtime configuration...");
@@ -748,7 +753,7 @@ function bindControls() {
         appendLog(ctrlLog, "[control] config patched");
         recordOperatorAction(
           "Config updated",
-          `Deterministic ${deterministicMode ? "on" : "off"}, orbital model ${orbitalModelEnabled ? "on" : "off"}, time scale ${payload.simulation_time_scale ?? "unchanged"}.`
+          `Deterministic ${deterministicMode ? "on" : "off"}, orbital model ${orbitalModelEnabled ? "on" : "off"}, compression ratio ${payload.simulation_time_scale ?? "unchanged"}, start ${payload.deterministic_start_time ?? "unchanged"}.`
         );
         showToast("success", "Config Applied", "Runtime configuration updated.");
       } catch (err) {

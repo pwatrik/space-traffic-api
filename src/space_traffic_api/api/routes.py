@@ -10,7 +10,7 @@ from flask import Blueprint, Response, jsonify, redirect, render_template, reque
 
 from ..simulation import SimulationService, list_faults, list_scenarios
 from ..store import SQLiteStore
-from .serializers import serialize_control_event, serialize_departure
+from .serializers import serialize_control_event, serialize_departure, serialize_ship_state
 
 
 def create_api_blueprint(
@@ -99,7 +99,8 @@ def create_api_blueprint(
             in_transit = in_transit_raw.strip().lower() in {"1", "true", "yes", "on"}
         limit = min(5000, max(1, request.args.get("limit", default=500, type=int)))
         rows = store.list_ship_states(status=status, in_transit=in_transit, limit=limit)
-        return jsonify({"ships": rows, "count": len(rows)})
+        serialized = [serialize_ship_state(row) for row in rows]
+        return jsonify({"ships": serialized, "count": len(serialized)})
 
     @bp.get("/stats")
     def stats() -> Response:
@@ -203,8 +204,11 @@ def create_api_blueprint(
     @bp.patch("/config")
     def patch_config() -> Response:
         payload = request.get_json(silent=True) or {}
-        updated = simulation.patch_config(payload)
-        return jsonify(updated)
+        try:
+            updated = simulation.patch_config(payload)
+            return jsonify(updated)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
 
     @bp.get("/scenarios")
     def get_scenarios() -> Response:

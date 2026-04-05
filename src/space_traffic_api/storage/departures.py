@@ -13,7 +13,7 @@ class DepartureRepository:
         self._context = context
 
     def insert(self, event: dict[str, Any]) -> int:
-        now = datetime.now(UTC).isoformat()
+        now = event.get("created_at") or datetime.now(UTC).isoformat()
         with self._context.lock:
             cur = self._context.conn.execute(
                 """

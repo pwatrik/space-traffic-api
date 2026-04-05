@@ -21,11 +21,13 @@ class FleetRepository:
                 now = datetime.now(UTC).isoformat()
         else:
             now = datetime.now(UTC).isoformat()
+        now_wall = datetime.now(UTC).isoformat()
         rows = [
             {
                 "ship_id": ship["id"],
                 "current_station_id": ship["home_station_id"],
                 "updated_at": now,
+                "updated_at_wall": now_wall,
             }
             for ship in ships
         ]
@@ -41,7 +43,8 @@ class FleetRepository:
                     destination_station_id,
                     departure_time,
                     est_arrival_time,
-                    updated_at
+                    updated_at,
+                    updated_at_wall
                 )
                 VALUES (
                     :ship_id,
@@ -53,6 +56,7 @@ class FleetRepository:
                     NULL,
                     NULL,
                     :updated_at
+                    ,:updated_at_wall
                 )
                 ON CONFLICT(ship_id) DO NOTHING
                 """,
@@ -91,7 +95,8 @@ class FleetRepository:
                 ss.departure_time,
                 ss.est_arrival_time,
                 ss.ship_age_days,
-                ss.updated_at
+                ss.updated_at,
+                ss.updated_at_wall
             FROM ship_state ss
             JOIN ships s ON s.id = ss.ship_id
         """
@@ -147,16 +152,18 @@ class FleetRepository:
             return 0
 
         now = now_iso or datetime.now(UTC).isoformat()
+        now_wall = datetime.now(UTC).isoformat()
         with self._context.lock:
             cur = self._context.conn.execute(
                 """
                 UPDATE ship_state
                 SET
                     ship_age_days = ship_age_days + ?,
-                    updated_at = ?
+                    updated_at = ?,
+                    updated_at_wall = ?
                 WHERE status = 'active'
                 """,
-                (elapsed_days, now),
+                (elapsed_days, now, now_wall),
             )
             self._context.conn.commit()
             return int(cur.rowcount)
@@ -169,6 +176,7 @@ class FleetRepository:
         now_iso: str | None = None,
     ) -> bool:
         now = now_iso or datetime.now(UTC).isoformat()
+        now_wall = datetime.now(UTC).isoformat()
         with self._context.lock:
             cur = self._context.conn.execute(
                 """
@@ -181,10 +189,11 @@ class FleetRepository:
                     destination_station_id = NULL,
                     departure_time = NULL,
                     est_arrival_time = NULL,
-                    updated_at = ?
+                    updated_at = ?,
+                    updated_at_wall = ?
                 WHERE ship_id = ?
                 """,
-                (status, current_station_id, now, ship_id),
+                (status, current_station_id, now, now_wall, ship_id),
             )
             self._context.conn.commit()
             return int(cur.rowcount) > 0
@@ -210,6 +219,7 @@ class FleetRepository:
         now_iso: str | None = None,
     ) -> bool:
         now = now_iso or datetime.now(UTC).isoformat()
+        now_wall = datetime.now(UTC).isoformat()
         with self._context.lock:
             cur = self._context.conn.execute(
                 """
@@ -221,7 +231,8 @@ class FleetRepository:
                     destination_station_id = ?,
                     departure_time = ?,
                     est_arrival_time = ?,
-                    updated_at = ?
+                    updated_at = ?,
+                    updated_at_wall = ?
                 WHERE
                     ship_id = ?
                     AND status = 'active'
@@ -234,6 +245,7 @@ class FleetRepository:
                     departure_time,
                     est_arrival_time,
                     now,
+                    now_wall,
                     ship_id,
                     source_station_id,
                 ),
@@ -246,6 +258,7 @@ class FleetRepository:
 
     def complete_arrivals_with_details(self, as_of_time: str, now_iso: str | None = None) -> list[dict[str, Any]]:
         now = now_iso or datetime.now(UTC).isoformat()
+        now_wall = datetime.now(UTC).isoformat()
         with self._context.lock:
             arriving_rows = self._context.conn.execute(
                 """
@@ -278,14 +291,15 @@ class FleetRepository:
                     destination_station_id = NULL,
                     departure_time = NULL,
                     est_arrival_time = NULL,
-                    updated_at = ?
+                    updated_at = ?,
+                    updated_at_wall = ?
                 WHERE
                     status = 'active'
                     AND in_transit = 1
                     AND est_arrival_time IS NOT NULL
                     AND est_arrival_time <= ?
                 """,
-                (now, as_of_time),
+                (now, now_wall, as_of_time),
             )
             self._context.conn.commit()
             if int(cur.rowcount) <= 0:
@@ -294,6 +308,7 @@ class FleetRepository:
 
     def reset_to_home_station(self, now_iso: str | None = None) -> None:
         now = now_iso or datetime.now(UTC).isoformat()
+        now_wall = datetime.now(UTC).isoformat()
         with self._context.lock:
             self._context.conn.execute(
                 """
@@ -311,9 +326,10 @@ class FleetRepository:
                     departure_time = NULL,
                     est_arrival_time = NULL,
                     ship_age_days = 0,
-                    updated_at = ?
+                    updated_at = ?,
+                    updated_at_wall = ?
                 """,
-                (now,),
+                (now, now_wall),
             )
             self._context.conn.commit()
 
