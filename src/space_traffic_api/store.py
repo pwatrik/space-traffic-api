@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 import random
+from datetime import UTC, datetime
 from typing import Any
 
 from .storage import CatalogRepository, ControlRepository, DepartureRepository, FleetRepository, StorageContext
@@ -222,6 +224,58 @@ class SQLiteStore:
             now_iso=now_iso,
         )
 
+    def begin_departure(
+        self,
+        ship_id: str,
+        source_station_id: str,
+        destination_station_id: str,
+        departure_time: str,
+        est_arrival_time: str,
+        cargo: str | None = None,
+        now_iso: str | None = None,
+    ) -> bool:
+        now = now_iso or departure_time
+        with self._context.lock:
+            cur = self._context.conn.execute(
+                """
+                UPDATE ship_state
+                SET
+                    in_transit = 1,
+                    current_station_id = NULL,
+                    source_station_id = ?,
+                    destination_station_id = ?,
+                    departure_time = ?,
+                    est_arrival_time = ?,
+                    updated_at = ?
+                WHERE
+                    ship_id = ?
+                    AND status = 'active'
+                    AND in_transit = 0
+                    AND current_station_id = ?
+                """,
+                (
+                    source_station_id,
+                    destination_station_id,
+                    departure_time,
+                    est_arrival_time,
+                    now,
+                    ship_id,
+                    source_station_id,
+                ),
+            )
+            if int(cur.rowcount) <= 0:
+                self._context.conn.rollback()
+                return False
+
+            if cargo:
+                self._context.conn.execute(
+                    "UPDATE ships SET cargo = ? WHERE id = ?",
+                    (cargo, ship_id),
+                )
+
+            self._context.conn.commit()
+            return True
+
     def complete_ship_arrivals(self, as_of_time: str) -> int:
         return self.fleet.complete_arrivals(as_of_time)
 
@@ -233,6 +287,81 @@ class SQLiteStore:
 
     def insert_departure(self, event: dict[str, Any]) -> int:
         return self.departures.insert(event)
+
+    def persist_departure_with_economy_impact(
+        self,
+        event: dict[str, Any],
+        rng: random.Random | None = None,
+        magnitude: float = 0.012,
+    ) -> int:
+        rng = rng or random.Random()
+        magnitude = max(0.001, min(0.2, float(magnitude)))
+
+        with self._context.lock:
+            cur = self._context.conn.execute(
+                """
+                INSERT INTO departures (
+                    event_uid, departure_time, ship_id, source_station_id, destination_station_id,
+                    est_arrival_time, scenario, fault_flags, malformed, payload_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event["event_uid"],
+                    event["departure_time"],
+                    event.get("ship_id"),
+                    event.get("source_station_id"),
+                    event.get("destination_station_id"),
+                    event.get("est_arrival_time"),
+                    event.get("scenario"),
+                    json.dumps(event.get("fault_flags", [])),
+                    1 if event.get("malformed") else 0,
+                    event["payload_json"],
+                    event.get("created_at") or datetime.now(UTC).isoformat(),
+                ),
+            )
+
+            source_station_id = str(event.get("source_station_id") or "")
+            destination_station_id = str(event.get("destination_station_id") or "")
+            if source_station_id and destination_station_id:
+                ids = [source_station_id]
+                if destination_station_id != source_station_id:
+                    ids.append(destination_station_id)
+
+                placeholders = ",".join("?" for _ in ids)
+                rows = self._context.conn.execute(
+                    f"SELECT id, economy_state FROM stations WHERE id IN ({placeholders})",
+                    ids,
+                ).fetchall()
+                by_id = {str(row["id"]): row for row in rows}
+                updates: list[tuple[str, str]] = []
+
+                src_row = by_id.get(source_station_id)
+                if src_row:
+                    src_state = self.catalog._parse_json_column(src_row["economy_state"])
+                    src_supply = float(src_state.get("supply_index", 1.0) or 1.0)
+                    supply_drop = magnitude * (0.8 + (rng.random() * 0.4))
+                    src_state["supply_index"] = round(max(0.1, min(5.0, src_supply - supply_drop)), 4)
+                    updates.append((json.dumps(src_state), source_station_id))
+
+                dst_row = by_id.get(destination_station_id)
+                if dst_row:
+                    dst_state = self.catalog._parse_json_column(dst_row["economy_state"])
+                    dst_demand = float(dst_state.get("demand_index", 1.0) or 1.0)
+                    demand_relief = magnitude * (0.6 + (rng.random() * 0.4))
+                    dst_state["demand_index"] = round(max(0.1, min(5.0, dst_demand - demand_relief)), 4)
+                    dst_price = float(dst_state.get("price_index", 1.0) or 1.0)
+                    price_ease = magnitude * 0.3 * (0.8 + (rng.random() * 0.4))
+                    dst_state["price_index"] = round(max(0.5, min(3.0, dst_price - price_ease)), 4)
+                    updates.append((json.dumps(dst_state), destination_station_id))
+
+                if updates:
+                    self._context.conn.executemany(
+                        "UPDATE stations SET economy_state = ? WHERE id = ?",
+                        updates,
+                    )
+
+            self._context.conn.commit()
+            return int(cur.lastrowid)
 
     def list_departures(
         self,

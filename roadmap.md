@@ -289,6 +289,8 @@ Status: In progress
 - Completed: Session 4 mutation-aware active-ship filtering validated against determinism/golden/API/scenario/pirate suites.
 - Completed: Session 5 reduced per-event retention overhead by throttling departure trimming to periodic checks.
 - Completed: Session 5 tuned startup launch batch size for smoother tick latency while preserving deterministic output contracts.
+- Completed: Session 6 collapsed ship-state/cargo mutation into a single departure-start transaction.
+- Completed: Session 6 collapsed departure insert plus economy-impact writes into a single persistence transaction, materially improving generator throughput while preserving deterministic/golden/API behavior.
 
 ### Goal
 Upgrade engine internals so advanced simulation behavior remains stable, reproducible, and performant.

@@ -24,23 +24,22 @@ def create_departure_event(
 	"""Build a departure event and return updated counter state."""
 
 	eta = estimate_arrival(departure_time, source_station_id, destination_station_id)
+	source_cargo = ""
+	if ship_faction == "merchant":
+		source_station = station_lookup.get(source_station_id) or {}
+		source_cargo = str(source_station.get("cargo_type") or "").strip()
 
-	departed = store.begin_ship_transit(
+	departed = store.begin_departure(
 		ship_id=ship_id,
 		source_station_id=source_station_id,
 		destination_station_id=destination_station_id,
 		departure_time=departure_time.isoformat(),
 		est_arrival_time=eta.isoformat(),
+		cargo=source_cargo or None,
 		now_iso=departure_time.isoformat(),
 	)
 	if not departed:
 		return None, event_counter, ""
-
-	if ship_faction == "merchant":
-		source_station = station_lookup.get(source_station_id) or {}
-		source_cargo = str(source_station.get("cargo_type") or "").strip()
-		if source_cargo:
-			store.set_ship_cargo(ship_id=ship_id, cargo=source_cargo)
 
 	next_event_counter = event_counter + 1
 	event_uid = f"EVT-{next_event_counter:09d}-{rng.getrandbits(32):08x}"

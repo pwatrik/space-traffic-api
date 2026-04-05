@@ -653,22 +653,16 @@ class DepartureGenerator(threading.Thread):
 
     def _persist_and_publish_event(self, event: dict[str, Any], state: dict[str, Any]) -> None:
         try:
-            row_id = self._store.insert_departure(event)
+            row_id = self._store.persist_departure_with_economy_impact(
+                event,
+                rng=self._rng,
+                magnitude=float(state.get("economy_departure_impact_magnitude", 0.012) or 0.012),
+            )
         except sqlite3.ProgrammingError:
             # Application shutdown can close the DB while the generator thread is finishing a tick.
             self._stop_event.set()
             return
         event["id"] = row_id
-        try:
-            self._store.apply_departure_economy_impact(
-                source_station_id=str(event.get("source_station_id") or ""),
-                destination_station_id=str(event.get("destination_station_id") or ""),
-                rng=self._rng,
-                magnitude=float(state.get("economy_departure_impact_magnitude", 0.012) or 0.012),
-            )
-        except sqlite3.ProgrammingError:
-            self._stop_event.set()
-            return
 
         now_monotonic = time.monotonic()
         if now_monotonic >= self._next_retention_trim_at:
