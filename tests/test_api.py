@@ -456,3 +456,63 @@ def test_control_reset_uses_start_time_even_when_deterministic_mode_off(monkeypa
             app.config["space_store"].close()
 
 
+def test_timestamp_split_fields_present_in_api_payloads(monkeypatch):
+    with TemporaryDirectory() as tmp:
+        monkeypatch.setenv("SPACE_TRAFFIC_DB_PATH", f"{tmp}/test.db")
+        monkeypatch.setenv("SPACE_TRAFFIC_API_KEY", "test-key")
+        monkeypatch.setenv("SPACE_TRAFFIC_DISABLE_GENERATOR", "false")
+        monkeypatch.setenv("SPACE_TRAFFIC_DETERMINISTIC_MODE", "true")
+        monkeypatch.setenv("SPACE_TRAFFIC_DETERMINISTIC_SEED", "9001")
+        monkeypatch.setenv("SPACE_TRAFFIC_MIN_EVENTS_PER_MIN", "300")
+        monkeypatch.setenv("SPACE_TRAFFIC_MAX_EVENTS_PER_MIN", "300")
+
+        app = create_app()
+        client = app.test_client()
+        headers = {"X-API-Key": "test-key"}
+        try:
+            # Force at least one control event.
+            patch_resp = client.patch(
+                "/config",
+                headers=headers,
+                json={"simulation_time_scale": 2.0},
+            )
+            assert patch_resp.status_code == 200
+
+            deadline = time.time() + 6.0
+            departure = None
+            while time.time() < deadline and departure is None:
+                dep_resp = client.get("/departures?limit=20", headers=headers)
+                assert dep_resp.status_code == 200
+                departures = dep_resp.get_json()["departures"]
+                if departures:
+                    departure = departures[-1]
+                    break
+                time.sleep(0.2)
+
+            assert departure is not None
+            assert departure["departure_time_simulated"] == departure["departure_time"]
+            assert departure["est_arrival_time_simulated"] == departure["est_arrival_time"]
+            assert departure["recorded_at_wall"] is not None
+
+            control_resp = client.get("/control-events?limit=20", headers=headers)
+            assert control_resp.status_code == 200
+            control_events = control_resp.get_json()["control_events"]
+            assert len(control_events) >= 1
+            control_event = control_events[-1]
+            assert control_event["event_time_simulated"] == control_event["event_time"]
+            assert control_event["recorded_at_wall"] is not None
+
+            state_resp = client.get("/ships/state?limit=20", headers=headers)
+            assert state_resp.status_code == 200
+            ships = state_resp.get_json()["ships"]
+            assert len(ships) > 0
+            row = ships[0]
+            assert row["updated_at_simulated"] == row["updated_at"]
+            assert row["updated_at_wall"] is not None
+            assert row["departure_time_simulated"] == row.get("departure_time")
+            assert row["est_arrival_time_simulated"] == row.get("est_arrival_time")
+        finally:
+            app.config["space_simulation"].stop(timeout=6.0)
+            app.config["space_store"].close()
+
+

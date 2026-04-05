@@ -639,6 +639,7 @@ class DepartureGenerator(threading.Thread):
             self._persist_and_publish_event(event, state)
 
     def _persist_and_publish_event(self, event: dict[str, Any], state: dict[str, Any]) -> None:
+        event["created_at"] = datetime.now(UTC).isoformat()
         try:
             row_id = self._store.insert_departure(event)
         except sqlite3.ProgrammingError:

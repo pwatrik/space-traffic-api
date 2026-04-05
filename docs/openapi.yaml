@@ -162,10 +162,18 @@ components:
           type: [string, "null"]
           format: date-time
           description: Simulated timeline departure timestamp.
+        departure_time_simulated:
+          type: [string, "null"]
+          format: date-time
+          description: Explicit alias for simulated departure timestamp.
         est_arrival_time:
           type: [string, "null"]
           format: date-time
           description: Simulated timeline estimated arrival timestamp sampled at departure creation time.
+        est_arrival_time_simulated:
+          type: [string, "null"]
+          format: date-time
+          description: Explicit alias for simulated estimated arrival timestamp.
         ship_age_days:
           type: number
           format: float
@@ -174,6 +182,14 @@ components:
           type: string
           format: date-time
           description: Runtime update/persistence timestamp (transitional until explicit wall-clock split lands).
+        updated_at_simulated:
+          type: string
+          format: date-time
+          description: Simulated timeline update timestamp.
+        updated_at_wall:
+          type: [string, "null"]
+          format: date-time
+          description: Wall-clock timestamp when this state row was last persisted.
 
     Departure:
       type: object
@@ -190,6 +206,10 @@ components:
           type: string
           format: date-time
           description: Simulated timeline departure timestamp.
+        departure_time_simulated:
+          type: string
+          format: date-time
+          description: Explicit alias for simulated departure timestamp.
         ship_id:
           type: [string, "null"]
           example: SHIP-00042
@@ -203,6 +223,14 @@ components:
           type: [string, "null"]
           format: date-time
           description: Simulated timeline estimated arrival timestamp.
+        est_arrival_time_simulated:
+          type: [string, "null"]
+          format: date-time
+          description: Explicit alias for simulated estimated arrival timestamp.
+        recorded_at_wall:
+          type: [string, "null"]
+          format: date-time
+          description: Wall-clock timestamp when the departure row was persisted.
         scenario:
           type: [string, "null"]
           description: Active scenario name at time of departure, or null.
@@ -231,6 +259,14 @@ components:
           type: string
           format: date-time
           description: Event timestamp used by current runtime path (explicit wall-clock/simulated split planned).
+        event_time_simulated:
+          type: string
+          format: date-time
+          description: Explicit simulated event timestamp.
+        recorded_at_wall:
+          type: [string, "null"]
+          format: date-time
+          description: Wall-clock timestamp when the control event row was persisted.
         event_type:
           type: string
           enum: [control, scenario, fault, lifecycle, pirate]

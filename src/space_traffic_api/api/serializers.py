@@ -31,10 +31,13 @@ def serialize_departure(row: dict[str, Any]) -> dict[str, Any]:
         "id": row["id"],
         "event_uid": row["event_uid"],
         "departure_time": row["departure_time"],
+        "departure_time_simulated": row["departure_time"],
         "ship_id": row.get("ship_id"),
         "source_station_id": row.get("source_station_id"),
         "destination_station_id": row.get("destination_station_id"),
         "est_arrival_time": row.get("est_arrival_time"),
+        "est_arrival_time_simulated": row.get("est_arrival_time"),
+        "recorded_at_wall": row.get("created_at"),
         "scenario": row.get("scenario"),
         "fault_flags": _parse_fault_flags(row.get("fault_flags")),
         "malformed": bool(row.get("malformed")),
@@ -55,7 +58,19 @@ def serialize_control_event(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": row["id"],
         "event_time": row["event_time"],
+        "event_time_simulated": row["event_time"],
+        "recorded_at_wall": row.get("created_at"),
         "event_type": row["event_type"],
         "action": row["action"],
         "payload": payload,
+    }
+
+
+def serialize_ship_state(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **row,
+        "departure_time_simulated": row.get("departure_time"),
+        "est_arrival_time_simulated": row.get("est_arrival_time"),
+        "updated_at_simulated": row.get("updated_at"),
+        "updated_at_wall": row.get("updated_at_wall") or row.get("updated_at"),
     }

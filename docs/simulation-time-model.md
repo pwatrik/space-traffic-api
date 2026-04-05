@@ -63,6 +63,13 @@ This document defines the current contract and target contract for simulation ti
 - deterministic_start_time is adjustable via PATCH /config with ISO-8601 validation.
 - Applying deterministic_start_time re-anchors simulation_now immediately.
 
+## Session 5 Implementation Notes
+
+- Departure API payloads now include explicit simulated aliases (`departure_time_simulated`, `est_arrival_time_simulated`) and wall-clock persistence time (`recorded_at_wall`).
+- Control-event payloads now include explicit simulated alias (`event_time_simulated`) and wall-clock persistence time (`recorded_at_wall`).
+- Ship-state payloads now include explicit simulated aliases (`departure_time_simulated`, `est_arrival_time_simulated`, `updated_at_simulated`) and wall-clock update timestamp (`updated_at_wall`).
+- Storage now persists wall-clock fields in control and ship-state paths (`control_events.created_at`, `ship_state.updated_at_wall`).
+
 ## API Documentation Requirements (Session 1)
 
 - OpenAPI descriptions should state whether each timing field is simulated-time, wall-clock, or transitional.
