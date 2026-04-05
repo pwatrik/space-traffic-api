@@ -240,3 +240,110 @@ def test_departure_persists_est_arrival_time_even_as_orbital_state_moves(monkeyp
         assert ship_state_after["est_arrival_time"] == persisted_eta
     finally:
         app.config["space_store"].close()
+
+
+def _sample_route_days(
+    simulation,
+    generator,
+    source: str,
+    destination: str,
+    *,
+    samples: int,
+    step_days: float,
+) -> list[float]:
+    values: list[float] = []
+    for _ in range(samples):
+        tick_time = generator._current_tick_time(simulation.snapshot())
+        generator._rng = random.Random(1337)
+        eta = simulation.estimate_arrival(tick_time, source, destination)
+        values.append((eta - tick_time).total_seconds() / 86400.0)
+        generator._advance_sim_time(tick_time, step_days * 86400.0)
+    return values
+
+
+def test_calibrated_route_durations_are_deterministic_across_boots(monkeypatch, tmp_path):
+    def _run(db_name: str) -> tuple[list[float], list[float]]:
+        db_path = tmp_path / db_name
+        monkeypatch.setenv("SPACE_TRAFFIC_DB_PATH", str(db_path))
+        monkeypatch.setenv("SPACE_TRAFFIC_API_KEY", "test-key")
+        monkeypatch.setenv("SPACE_TRAFFIC_DISABLE_GENERATOR", "true")
+        monkeypatch.setenv("SPACE_TRAFFIC_DETERMINISTIC_MODE", "true")
+        monkeypatch.setenv("SPACE_TRAFFIC_DETERMINISTIC_SEED", "424242")
+        monkeypatch.setenv("SPACE_TRAFFIC_DETERMINISTIC_START_TIME", "2150-01-01T00:00:00Z")
+        monkeypatch.setenv("SPACE_TRAFFIC_ORBITAL_DISTANCE_MODEL_ENABLED", "true")
+        monkeypatch.setenv("SPACE_TRAFFIC_ORBITAL_DISTANCE_MULTIPLIER_MIN", "0.7")
+        monkeypatch.setenv("SPACE_TRAFFIC_ORBITAL_DISTANCE_MULTIPLIER_MAX", "1.3")
+
+        app = create_app()
+        try:
+            simulation = app.config["space_simulation"]
+            generator = simulation._generator
+            generator._ensure_rng(simulation.snapshot())
+
+            earth_mars = _sample_route_days(
+                simulation,
+                generator,
+                "STN-PLANET-EARTH",
+                "STN-PLANET-MARS",
+                samples=16,
+                step_days=5.0,
+            )
+            neptune_pluto = _sample_route_days(
+                simulation,
+                generator,
+                "STN-PLANET-NEPTUNE",
+                "STN-PLANET-PLUTO",
+                samples=16,
+                step_days=11.0,
+            )
+            return earth_mars, neptune_pluto
+        finally:
+            app.config["space_store"].close()
+
+    em_a, np_a = _run("travel_det_a.db")
+    em_b, np_b = _run("travel_det_b.db")
+
+    assert em_a == em_b
+    assert np_a == np_b
+
+
+def test_calibrated_route_envelope_snapshot_is_stable(monkeypatch, tmp_path):
+    db_path = tmp_path / "travel_envelope_snapshot.db"
+    monkeypatch.setenv("SPACE_TRAFFIC_DB_PATH", str(db_path))
+    monkeypatch.setenv("SPACE_TRAFFIC_API_KEY", "test-key")
+    monkeypatch.setenv("SPACE_TRAFFIC_DISABLE_GENERATOR", "true")
+    monkeypatch.setenv("SPACE_TRAFFIC_DETERMINISTIC_MODE", "true")
+    monkeypatch.setenv("SPACE_TRAFFIC_DETERMINISTIC_SEED", "424242")
+    monkeypatch.setenv("SPACE_TRAFFIC_DETERMINISTIC_START_TIME", "2150-01-01T00:00:00Z")
+    monkeypatch.setenv("SPACE_TRAFFIC_ORBITAL_DISTANCE_MODEL_ENABLED", "true")
+    monkeypatch.setenv("SPACE_TRAFFIC_ORBITAL_DISTANCE_MULTIPLIER_MIN", "0.7")
+    monkeypatch.setenv("SPACE_TRAFFIC_ORBITAL_DISTANCE_MULTIPLIER_MAX", "1.3")
+
+    app = create_app()
+    try:
+        simulation = app.config["space_simulation"]
+        generator = simulation._generator
+        generator._ensure_rng(simulation.snapshot())
+
+        earth_mars = _sample_route_days(
+            simulation,
+            generator,
+            "STN-PLANET-EARTH",
+            "STN-PLANET-MARS",
+            samples=120,
+            step_days=3.0,
+        )
+        neptune_pluto = _sample_route_days(
+            simulation,
+            generator,
+            "STN-PLANET-NEPTUNE",
+            "STN-PLANET-PLUTO",
+            samples=200,
+            step_days=7.0,
+        )
+
+        # Session 6 stability snapshot for calibration envelope.
+        assert round(min(earth_mars), 3) == 3.525
+        assert round(max(neptune_pluto), 3) == 184.058
+    finally:
+        app.config["space_store"].close()
