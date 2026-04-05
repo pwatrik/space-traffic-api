@@ -91,6 +91,7 @@ class DepartureGenerator(threading.Thread):
         self._departures_window_seconds = 60.0
         self._departure_timestamps: deque[float] = deque()
         self._startup_launch_batch_size = 24
+        self._startup_launch_batch_size_min = 8
         self._startup_launch_queue: deque[dict[str, Any]] = deque()
 
     def stop(self) -> None:
@@ -555,12 +556,12 @@ class DepartureGenerator(threading.Thread):
         scenario: dict[str, Any] | None,
         tick_time: datetime,
     ) -> dict[str, Any] | None:
-        ship = self._pick_ship(scenario, tick_time)
+        ship = self._pick_ship(state, scenario, tick_time)
         if not ship:
             return None
 
         src = ship["current_station_id"]
-        dst = self._pick_destination(ship, src, scenario)
+        dst = self._pick_destination(ship, src, scenario, runtime_snap=state)
         if not dst:
             return None
 
@@ -574,6 +575,7 @@ class DepartureGenerator(threading.Thread):
             departure_time=tick_time,
             scenario=scenario,
             ship_faction=str(ship.get("faction") or ""),
+            runtime_snap=state,
         )
         if event is None:
             return None
@@ -587,6 +589,7 @@ class DepartureGenerator(threading.Thread):
         departure_time: datetime,
         scenario: dict[str, Any] | None,
         ship_faction: str | None = None,
+        runtime_snap: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
         event, self._event_counter, event_uid = create_departure_event(
             ship_id=ship_id,
@@ -595,6 +598,7 @@ class DepartureGenerator(threading.Thread):
             departure_time=departure_time,
             scenario=scenario,
             ship_faction=ship_faction,
+            runtime_snap=runtime_snap,
             store=self._store,
             station_lookup=self._station_lookup,
             rng=self._rng,
@@ -623,13 +627,12 @@ class DepartureGenerator(threading.Thread):
         if not self._startup_launch_queue:
             return True
 
-        runtime_snap = self._runtime.snapshot()
-        launches_remaining = min(self._startup_launch_batch_size, len(self._startup_launch_queue))
+        launches_remaining = min(self._current_startup_launch_batch_size(), len(self._startup_launch_queue))
         while launches_remaining > 0:
             ship = self._startup_launch_queue.popleft()
             launches_remaining -= 1
             src = ship["current_station_id"]
-            dst = self._pick_destination(ship, src, scenario, runtime_snap=runtime_snap)
+            dst = self._pick_destination(ship, src, scenario, runtime_snap=state)
             if not dst:
                 continue
             if self._is_scoped_interrupt(scenario, ship, src, dst):
@@ -642,6 +645,7 @@ class DepartureGenerator(threading.Thread):
                 departure_time=tick_time,
                 scenario=scenario,
                 ship_faction=str(ship.get("faction") or ""),
+                runtime_snap=state,
             )
             if event is None:
                 continue
@@ -691,9 +695,8 @@ class DepartureGenerator(threading.Thread):
             while self._departure_timestamps and (now - self._departure_timestamps[0]) > self._departures_window_seconds:
                 self._departure_timestamps.popleft()
 
-    def _pick_ship(self, scenario: dict[str, Any] | None, tick_time: datetime) -> dict[str, Any] | None:
+    def _pick_ship(self, runtime_snap: dict[str, Any], scenario: dict[str, Any] | None, tick_time: datetime) -> dict[str, Any] | None:
         all_available = self._store.list_available_ships()
-        runtime_snap = self._runtime.snapshot()
         merchant_idle_pause_seconds = int(runtime_snap.get("merchant_idle_pause_seconds", 120))
         candidates = [
             ship
@@ -806,11 +809,18 @@ class DepartureGenerator(threading.Thread):
         advance_orbital_body_state(self._orbital_state, interval_seconds / 86400.0)
         self._sim_time = tick_time + timedelta(seconds=interval_seconds)
 
-    def estimate_arrival(self, departure_time: datetime, source: str, destination: str) -> datetime:
+    def estimate_arrival(
+        self,
+        departure_time: datetime,
+        source: str,
+        destination: str,
+        runtime_snap: dict[str, Any] | None = None,
+    ) -> datetime:
         if self._rng is None:
             self._ensure_rng(self._runtime.snapshot())
 
-        runtime_snap = self._runtime.snapshot()
+        if runtime_snap is None:
+            runtime_snap = self._runtime.snapshot()
         src_group = self._distance_groups.get(source, 5)
         dst_group = self._distance_groups.get(destination, 5)
         base_hops = abs(src_group - dst_group)
@@ -865,6 +875,16 @@ class DepartureGenerator(threading.Thread):
         multiplier = min_multiplier + ((max_multiplier - min_multiplier) * normalized_distance)
 
         return base_hops * multiplier
+
+    def _current_startup_launch_batch_size(self) -> int:
+        last_latency = self._tick_latency_last_ms
+        if last_latency >= 1000.0:
+            return self._startup_launch_batch_size_min
+        if last_latency >= 700.0:
+            return max(self._startup_launch_batch_size_min, self._startup_launch_batch_size // 2)
+        if last_latency >= 450.0:
+            return max(self._startup_launch_batch_size_min, (self._startup_launch_batch_size * 3) // 4)
+        return self._startup_launch_batch_size
 
     def _apply_faults(self, event: dict[str, Any], state: dict[str, Any]) -> None:
         apply_faults(

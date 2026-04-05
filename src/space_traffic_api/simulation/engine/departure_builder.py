@@ -15,15 +15,16 @@ def create_departure_event(
 	departure_time: datetime,
 	scenario: dict[str, Any] | None,
 	ship_faction: str | None,
+	runtime_snap: dict[str, Any] | None,
 	store: SQLiteStore,
 	station_lookup: dict[str, dict[str, Any]],
 	rng: random.Random,
-	estimate_arrival: Callable[[datetime, str, str], datetime],
+	estimate_arrival: Callable[[datetime, str, str, dict[str, Any] | None], datetime],
 	event_counter: int,
 ) -> tuple[dict[str, Any] | None, int, str]:
 	"""Build a departure event and return updated counter state."""
 
-	eta = estimate_arrival(departure_time, source_station_id, destination_station_id)
+	eta = estimate_arrival(departure_time, source_station_id, destination_station_id, runtime_snap)
 	source_cargo = ""
 	if ship_faction == "merchant":
 		source_station = station_lookup.get(source_station_id) or {}

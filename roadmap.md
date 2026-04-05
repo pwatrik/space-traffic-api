@@ -291,6 +291,8 @@ Status: In progress
 - Completed: Session 5 tuned startup launch batch size for smoother tick latency while preserving deterministic output contracts.
 - Completed: Session 6 collapsed ship-state/cargo mutation into a single departure-start transaction.
 - Completed: Session 6 collapsed departure insert plus economy-impact writes into a single persistence transaction, materially improving generator throughput while preserving deterministic/golden/API behavior.
+- Completed: Session 7 threaded per-tick runtime snapshot state through ship selection, destination choice, and ETA estimation to avoid redundant snapshot reads.
+- Completed: Session 7 added adaptive startup launch batch sizing based on recent tick latency while preserving deterministic/golden/API behavior.
 
 ### Goal
 Upgrade engine internals so advanced simulation behavior remains stable, reproducible, and performant.
