@@ -19,8 +19,8 @@ def test_station_economy_cache_single_query(monkeypatch):
     mock_calls = []
 
     class MockStore:
-        def list_stations(self, limit: int, order_by: str, order: str) -> tuple[list[dict], int]:
-            mock_calls.append({"limit": limit, "order_by": order_by, "order": order})
+        def list_stations(self, limit: int, order_by: str, order: str, offset: int = 0) -> tuple[list[dict], int]:
+            mock_calls.append({"limit": limit, "order_by": order_by, "order": order, "offset": offset})
             # Return 35 stations (less than 5000 limit)
             stations = [
                 {

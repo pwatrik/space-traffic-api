@@ -56,22 +56,38 @@ class StationEconomyCache:
         return updated_accumulator, refreshed
 
     def _refresh_batch(self, store: Any) -> None:
-        """Fetch economy data once from DB and cache in memory."""
-        # Single-pass batch load: get all stations with only one DB query
-        rows, total = store.list_stations(limit=10000, order_by="id", order="asc")
+        """Fetch economy data from DB and cache in memory, paginating if needed."""
+        page_size = 10000
+        offset = 0
+        loaded = 0
+        total = None
         self._cached_keys.clear()
 
-        for row in rows:
-            station_id = str(row.get("id") or "")
-            if not station_id or station_id not in self._station_lookup:
-                continue
+        while total is None or loaded < total:
+            rows, total = store.list_stations(
+                limit=page_size,
+                offset=offset,
+                order_by="id",
+                order="asc",
+            )
+            if not rows:
+                break
 
-            # Update in-memory cache with latest economy state from DB
-            station = self._station_lookup[station_id]
-            station["economy_profile"] = row.get("economy_profile", {})
-            station["economy_state"] = row.get("economy_state", {})
-            station["economy_derived"] = row.get("economy_derived", {})
-            self._cached_keys.add(station_id)
+            for row in rows:
+                station_id = str(row.get("id") or "")
+                if not station_id or station_id not in self._station_lookup:
+                    continue
+
+                # Update in-memory cache with latest economy state from DB
+                station = self._station_lookup[station_id]
+                station["economy_profile"] = row.get("economy_profile", {})
+                station["economy_state"] = row.get("economy_state", {})
+                station["economy_derived"] = row.get("economy_derived", {})
+                self._cached_keys.add(station_id)
+
+            batch_size = len(rows)
+            loaded += batch_size
+            offset += batch_size
 
         self._last_refresh_at = datetime.now()
 
@@ -174,13 +190,7 @@ class PickDestinationOptimized:
         if not station_ids:
             return None
 
-        if scenario and scenario.get("name") == "shortage":
-            keywords = SCENARIO_DEFINITIONS["shortage"].get("preferred_source_keywords", [])
-            preferred = [sid for sid in station_ids if any(key in sid for key in keywords)]
-            if preferred and rng.random() < 0.65:
-                return rng.choice(preferred)
-
-        # Bounty hunter targeting: short-circuit if active
+        # Bounty hunter targeting: short-circuit if active (evaluated before shortage, matching baseline)
         is_bounty_hunter = str(ship.get("faction") or "") == "bounty_hunter"
         if is_bounty_hunter and isinstance(pirate_state, dict) and pirate_state.get("active"):
             affected = [
@@ -195,14 +205,21 @@ class PickDestinationOptimized:
                 if rng.random() < response_bias:
                     return rng.choice(affected)
 
+        if scenario and scenario.get("name") == "shortage":
+            keywords = SCENARIO_DEFINITIONS["shortage"].get("preferred_source_keywords", [])
+            preferred = [sid for sid in station_ids if any(key in sid for key in keywords)]
+            if preferred and rng.random() < 0.65:
+                return rng.choice(preferred)
+
         # For merchants: use cached economy weights
-        if str(ship.get("faction") or "") == "merchant" and economy_preference_weight > 0:
+        clamped_economy_preference_weight = min(1.0, max(0.0, float(economy_preference_weight)))
+        if str(ship.get("faction") or "") == "merchant" and clamped_economy_preference_weight > 0:
             weighted = []
             for sid in station_ids:
                 weight = self._economy_cache.get_economy_weight(
                     source_station_id,
                     sid,
-                    economy_preference_weight,
+                    clamped_economy_preference_weight,
                 )
                 weighted.append((sid, weight))
 
