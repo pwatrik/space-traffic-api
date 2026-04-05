@@ -327,7 +327,7 @@ class DepartureGenerator(threading.Thread):
         if not active_ships:
             return
 
-        apply_decommission_policy(
+        retired_ship_ids = apply_decommission_policy(
             active_ships=active_ships,
             elapsed_days=elapsed_days,
             tick_time=tick_time,
@@ -335,11 +335,13 @@ class DepartureGenerator(threading.Thread):
             store=self._store,
             rng=self._rng,
         )
-        active_ships = self._store.list_active_ships_for_lifecycle()
+        if retired_ship_ids:
+            retired_set = set(retired_ship_ids)
+            active_ships = [ship for ship in active_ships if ship.get("ship_id") not in retired_set]
         if not active_ships:
             return
 
-        apply_war_impact_policy(
+        destroyed_ship_ids = apply_war_impact_policy(
             active_ships=active_ships,
             elapsed_days=elapsed_days,
             tick_time=tick_time,
@@ -347,7 +349,9 @@ class DepartureGenerator(threading.Thread):
             store=self._store,
             rng=self._rng,
         )
-        active_ships = self._store.list_active_ships_for_lifecycle()
+        if destroyed_ship_ids:
+            destroyed_set = set(destroyed_ship_ids)
+            active_ships = [ship for ship in active_ships if ship.get("ship_id") not in destroyed_set]
         _, self._next_ship_sequence = apply_build_queue_policy(
             active_ships=active_ships,
             elapsed_days=elapsed_days,

@@ -285,6 +285,8 @@ Status: In progress
 - Completed: Session 2 regression validation for determinism/API suites after scheduler hot-path changes.
 - Completed: Session 3 integrated cached destination-picking path and reduced duplicate available-ship list queries in generator hot loops.
 - Completed: Session 3 preserved deterministic/golden contracts after optimization-path parity fix.
+- Completed: Session 4 reduced lifecycle query churn by eliminating per-stage active-ship re-queries inside generator ticks.
+- Completed: Session 4 mutation-aware active-ship filtering validated against determinism/golden/API/scenario/pirate suites.
 
 ### Goal
 Upgrade engine internals so advanced simulation behavior remains stable, reproducible, and performant.
