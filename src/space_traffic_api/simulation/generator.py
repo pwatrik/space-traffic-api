@@ -635,7 +635,7 @@ class DepartureGenerator(threading.Thread):
         if not self._startup_launch_queue:
             return True
 
-        launches_remaining = min(self._current_startup_launch_batch_size(), len(self._startup_launch_queue))
+        launches_remaining = min(self._current_startup_launch_batch_size(state), len(self._startup_launch_queue))
         while launches_remaining > 0:
             ship = self._startup_launch_queue.popleft()
             launches_remaining -= 1
@@ -884,7 +884,9 @@ class DepartureGenerator(threading.Thread):
 
         return base_hops * multiplier
 
-    def _current_startup_launch_batch_size(self) -> int:
+    def _current_startup_launch_batch_size(self, state: dict[str, Any]) -> int:
+        if state.get("deterministic_mode"):
+            return self._startup_launch_batch_size
         last_latency = self._tick_latency_last_ms
         if last_latency >= 1000.0:
             return self._startup_launch_batch_size_min

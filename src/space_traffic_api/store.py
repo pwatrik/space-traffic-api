@@ -267,7 +267,7 @@ class SQLiteStore:
                 self._context.conn.rollback()
                 return False
 
-            if cargo:
+            if cargo is not None:
                 self._context.conn.execute(
                     "UPDATE ships SET cargo = ? WHERE id = ?",
                     (cargo, ship_id),
@@ -323,42 +323,13 @@ class SQLiteStore:
             source_station_id = str(event.get("source_station_id") or "")
             destination_station_id = str(event.get("destination_station_id") or "")
             if source_station_id and destination_station_id:
-                ids = [source_station_id]
-                if destination_station_id != source_station_id:
-                    ids.append(destination_station_id)
-
-                placeholders = ",".join("?" for _ in ids)
-                rows = self._context.conn.execute(
-                    f"SELECT id, economy_state FROM stations WHERE id IN ({placeholders})",
-                    ids,
-                ).fetchall()
-                by_id = {str(row["id"]): row for row in rows}
-                updates: list[tuple[str, str]] = []
-
-                src_row = by_id.get(source_station_id)
-                if src_row:
-                    src_state = self.catalog._parse_json_column(src_row["economy_state"])
-                    src_supply = float(src_state.get("supply_index", 1.0) or 1.0)
-                    supply_drop = magnitude * (0.8 + (rng.random() * 0.4))
-                    src_state["supply_index"] = round(max(0.1, min(5.0, src_supply - supply_drop)), 4)
-                    updates.append((json.dumps(src_state), source_station_id))
-
-                dst_row = by_id.get(destination_station_id)
-                if dst_row:
-                    dst_state = self.catalog._parse_json_column(dst_row["economy_state"])
-                    dst_demand = float(dst_state.get("demand_index", 1.0) or 1.0)
-                    demand_relief = magnitude * (0.6 + (rng.random() * 0.4))
-                    dst_state["demand_index"] = round(max(0.1, min(5.0, dst_demand - demand_relief)), 4)
-                    dst_price = float(dst_state.get("price_index", 1.0) or 1.0)
-                    price_ease = magnitude * 0.3 * (0.8 + (rng.random() * 0.4))
-                    dst_state["price_index"] = round(max(0.5, min(3.0, dst_price - price_ease)), 4)
-                    updates.append((json.dumps(dst_state), destination_station_id))
-
-                if updates:
-                    self._context.conn.executemany(
-                        "UPDATE stations SET economy_state = ? WHERE id = ?",
-                        updates,
-                    )
+                self.catalog._apply_economy_impact_no_commit(
+                    conn=self._context.conn,
+                    source_station_id=source_station_id,
+                    destination_station_id=destination_station_id,
+                    rng=rng,
+                    magnitude=magnitude,
+                )
 
             self._context.conn.commit()
             return int(cur.lastrowid)
