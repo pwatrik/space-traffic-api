@@ -385,6 +385,51 @@ def create_api_blueprint(
         next_since_id = serialized[-1]["id"] if serialized else since_id
         return jsonify({"control_events": serialized, "count": len(serialized), "next_since_id": next_since_id})
 
+    @bp.get("/control-events/export")
+    def control_events_export() -> Response:
+        since_id = request.args.get("since_id", type=int)
+        since_time = request.args.get("since_time")
+        until_time = request.args.get("until_time")
+        event_type = request.args.get("event_type")
+        action = request.args.get("action")
+        limit = min(10000, max(1, request.args.get("limit", default=1000, type=int)))
+        order_by = request.args.get("order_by", default="id")
+        order = request.args.get("order", default="asc")
+        export_format = request.args.get("format", default="ndjson").strip().lower()
+
+        if export_format not in {"ndjson", "csv"}:
+            return jsonify({"error": "format must be one of: ndjson, csv"}), 400
+
+        rows = simulation.list_control_events(
+            since_id=since_id,
+            since_time=since_time,
+            until_time=until_time,
+            event_type=event_type,
+            action=action,
+            limit=limit,
+            order_by=order_by,
+            order=order,
+        )
+        serialized = [serialize_control_event(row) for row in rows]
+
+        if export_format == "ndjson":
+            lines = [json.dumps(item, separators=(",", ":")) for item in serialized]
+            body = "\n".join(lines)
+            if body:
+                body += "\n"
+            return Response(body, mimetype="application/x-ndjson")
+
+        output = StringIO()
+        fieldnames = ["id", "event_time", "event_type", "action", "payload"]
+        writer = DictWriter(output, fieldnames=fieldnames)
+        writer.writeheader()
+        for item in serialized:
+            row = dict(item)
+            row["payload"] = json.dumps(row.get("payload"), separators=(",", ":"))
+            writer.writerow(row)
+
+        return Response(output.getvalue(), mimetype="text/csv")
+
     @bp.get("/control-events/stream")
     def control_events_stream() -> Response:
         replay_since_id = request.args.get("replay_since_id", type=int)

@@ -324,6 +324,8 @@ Status: In progress
 - Completed: Session 3 expanded API contract-shape coverage for stations, ships, ship-state, departures, and control-events responses.
 - Completed: Session 4 added departures integration export endpoint with NDJSON/CSV formats and shared query filters.
 - Completed: Session 4 added API coverage for export filtering/format validation and documented export contract in OpenAPI.
+- Completed: Session 5 added control-events integration export endpoint with NDJSON/CSV formats and shared query filters.
+- Completed: Session 5 added API coverage for control-event export filtering/format validation and documented export contract in OpenAPI.
 
 ### Goal
 Expose richer simulation capabilities through stable, usable API contracts.

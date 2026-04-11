@@ -795,6 +795,67 @@ paths:
               schema:
                 type: string
 
+  /control-events/export:
+    get:
+      summary: Export control events as NDJSON or CSV
+      parameters:
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [ndjson, csv]
+            default: ndjson
+        - $ref: "#/components/parameters/SinceId"
+        - name: since_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: until_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: event_type
+          in: query
+          schema:
+            type: string
+            enum: [control, scenario, fault, lifecycle, pirate]
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+            default: 1000
+        - name: order_by
+          in: query
+          schema:
+            type: string
+            enum: [id, event_time]
+            default: id
+        - $ref: "#/components/parameters/Order"
+      responses:
+        "200":
+          description: Exported control events in selected format
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+            text/csv:
+              schema:
+                type: string
+        "400":
+          description: Invalid export format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /config:
     get:
       summary: Get runtime snapshot

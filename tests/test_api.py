@@ -679,3 +679,67 @@ def test_departures_export_csv_and_invalid_format(monkeypatch):
             app.config["space_store"].close()
 
 
+def test_control_events_export_ndjson_with_filters(monkeypatch):
+    with TemporaryDirectory() as tmp:
+        monkeypatch.setenv("SPACE_TRAFFIC_DB_PATH", f"{tmp}/test.db")
+        monkeypatch.setenv("SPACE_TRAFFIC_DISABLE_GENERATOR", "true")
+
+        app = create_app()
+        client = app.test_client()
+        store = app.config["space_store"]
+        try:
+            store.insert_control_event(
+                event_type="scenario",
+                action="activated",
+                payload={"name": "war"},
+                event_time="2100-01-01T00:00:00+00:00",
+            )
+            store.insert_control_event(
+                event_type="fault",
+                action="activated",
+                payload={"name": "delay_spike"},
+                event_time="2100-01-01T01:00:00+00:00",
+            )
+
+            response = client.get("/control-events/export?format=ndjson&event_type=fault")
+            assert response.status_code == 200
+            assert response.mimetype == "application/x-ndjson"
+            lines = [line for line in response.get_data(as_text=True).splitlines() if line.strip()]
+            assert len(lines) == 1
+            assert '"event_type":"fault"' in lines[0]
+            assert '"event_type":"scenario"' not in lines[0]
+        finally:
+            app.config["space_store"].close()
+
+
+def test_control_events_export_csv_and_invalid_format(monkeypatch):
+    with TemporaryDirectory() as tmp:
+        monkeypatch.setenv("SPACE_TRAFFIC_DB_PATH", f"{tmp}/test.db")
+        monkeypatch.setenv("SPACE_TRAFFIC_DISABLE_GENERATOR", "true")
+
+        app = create_app()
+        client = app.test_client()
+        store = app.config["space_store"]
+        try:
+            store.insert_control_event(
+                event_type="control",
+                action="reset",
+                payload={"seed": 123},
+                event_time="2100-01-01T00:00:00+00:00",
+            )
+
+            csv_response = client.get("/control-events/export?format=csv&limit=1")
+            assert csv_response.status_code == 200
+            assert csv_response.mimetype == "text/csv"
+            content = csv_response.get_data(as_text=True)
+            assert "event_type" in content.splitlines()[0]
+            assert "reset" in content
+
+            invalid = client.get("/control-events/export?format=xml")
+            assert invalid.status_code == 400
+            payload = invalid.get_json()
+            assert payload["error"] == "format must be one of: ndjson, csv"
+        finally:
+            app.config["space_store"].close()
+
+
