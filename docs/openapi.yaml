@@ -6,6 +6,9 @@ info:
     Simulated solar-system shipping traffic API for data-engineering demos.
 
     This API is fully public and does not require authentication.
+
+    Integration examples and compatibility guidance:
+    - docs/api-consumption-guide.md
 servers:
   - url: http://localhost:8000
     description: Local development server

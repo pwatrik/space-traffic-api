@@ -326,6 +326,8 @@ Status: In progress
 - Completed: Session 4 added API coverage for export filtering/format validation and documented export contract in OpenAPI.
 - Completed: Session 5 added control-events integration export endpoint with NDJSON/CSV formats and shared query filters.
 - Completed: Session 5 added API coverage for control-event export filtering/format validation and documented export contract in OpenAPI.
+- Completed: Session 6 added operator-facing poll/stream/export integration examples and compatibility guidance.
+- Completed: Session 6 linked usage guidance from OpenAPI description for discoverability.
 
 ### Goal
 Expose richer simulation capabilities through stable, usable API contracts.
