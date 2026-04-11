@@ -268,6 +268,9 @@ class FleetRepository:
                 (as_of_time,),
             ).fetchall()
 
+            if not arriving_rows:
+                return []
+
             cur = self._context.conn.execute(
                 """
                 UPDATE ship_state

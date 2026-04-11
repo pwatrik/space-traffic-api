@@ -67,6 +67,7 @@ class DepartureGenerator(threading.Thread):
         self._naming = load_naming_config()
 
         self._rng: random.Random | None = None
+        self._economy_rng: random.Random | None = None
         self._sim_time: datetime | None = None
         self._event_counter = 0
         self._last_event_uid = ""
@@ -76,6 +77,7 @@ class DepartureGenerator(threading.Thread):
         self._next_ship_sequence = self._store.max_ship_sequence() + 1
         self._age_update_accumulator_days: float = 0.0
         self._economy_snapshot_accumulator_days: float = 0.0
+        self._economy_drift_accumulator_days: float = 0.0
         self._economy_snapshot_refresh_interval_days: float = 1.0 / 24.0  # once per simulated hour
         self._station_economy_cache = StationEconomyCache(self._station_lookup)
         self._destination_picker = PickDestinationOptimized(self._station_lookup, self._distance_groups)
@@ -203,6 +205,7 @@ class DepartureGenerator(threading.Thread):
 
         if self._rng is None:
             self._rng = random.Random(seed if det_mode else None)
+            self._economy_rng = random.Random((seed + 1_000_003) if det_mode else None)
             self._set_sim_time(state)
             self._initialize_orbital_state(state)
             self._startup_launch_queue.clear()
@@ -213,12 +216,14 @@ class DepartureGenerator(threading.Thread):
         if reset_marker and reset_marker != cache_key:
             self._last_reset_marker = reset_marker
             self._rng = random.Random(seed if det_mode else None)
+            self._economy_rng = random.Random((seed + 1_000_003) if det_mode else None)
             self._set_sim_time(state)
             self._initialize_orbital_state(state)
             self._event_counter = 0
             self._last_event_uid = ""
             self._startup_merchants_launched = False
             self._startup_launch_queue.clear()
+            self._economy_drift_accumulator_days = 0.0
 
     def _initialize_orbital_state(self, state: dict[str, Any]) -> None:
         seed = int(state.get("deterministic_seed", 424242) or 424242)
@@ -314,11 +319,14 @@ class DepartureGenerator(threading.Thread):
         )
 
         runtime_snap = self._runtime.snapshot()
-        self._store.advance_station_economy(
-            elapsed_days=elapsed_days,
-            rng=self._rng,
-            magnitude=float(runtime_snap.get("economy_drift_magnitude", 1.0) or 1.0),
-        )
+        self._economy_drift_accumulator_days += elapsed_days
+        if self._economy_drift_accumulator_days >= self._economy_snapshot_refresh_interval_days:
+            self._store.advance_station_economy(
+                elapsed_days=self._economy_drift_accumulator_days,
+                rng=self._economy_rng,
+                magnitude=float(runtime_snap.get("economy_drift_magnitude", 1.0) or 1.0),
+            )
+            self._economy_drift_accumulator_days = 0.0
         self._economy_snapshot_accumulator_days, _ = self._station_economy_cache.refresh_if_needed(
             store=self._store,
             elapsed_days=elapsed_days,
