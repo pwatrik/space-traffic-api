@@ -353,8 +353,27 @@ class RuntimeState:
             )
             return dict(self._state)
 
-    def list_control_events(self, since_id: int | None, limit: int, order: str) -> list[dict[str, Any]]:
-        return self._store.list_control_events(since_id=since_id, limit=limit, order=order)
+    def list_control_events(
+        self,
+        since_id: int | None,
+        since_time: str | None,
+        until_time: str | None,
+        event_type: str | None,
+        action: str | None,
+        limit: int,
+        order_by: str,
+        order: str,
+    ) -> list[dict[str, Any]]:
+        return self._store.list_control_events(
+            since_id=since_id,
+            since_time=since_time,
+            until_time=until_time,
+            event_type=event_type,
+            action=action,
+            limit=limit,
+            order_by=order_by,
+            order=order,
+        )
 
     def set_pirate_event_state(self, pirate_event: dict[str, Any]) -> None:
         with self._lock:

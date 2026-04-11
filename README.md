@@ -7,6 +7,9 @@ replay, named scenario bursts, pirate-activity lifecycle, fault injection, and S
 The machine-readable spec is available at `GET /openapi.yaml` (no auth required) and in
 [docs/openapi.yaml](docs/openapi.yaml).
 
+Practical poll/stream/export integration examples and compatibility notes are in
+[docs/api-consumption-guide.md](docs/api-consumption-guide.md).
+
 ## Features
 
 - **Domain data** — 40+ stations (planet/moon/asteroid), 500 ships (merchant, government, military, bounty_hunter), 75 cargo types.
@@ -245,8 +248,10 @@ Full API documentation is available here:
 #### Events
 - `GET /departures`
 - `GET /departures/stream`
+- `GET /departures/export`
 - `GET /control-events`
 - `GET /control-events/stream`
+- `GET /control-events/export`
 
 #### Controls
 - `GET /config`

@@ -384,3 +384,362 @@ def test_control_reset_rewinds_orbital_diagnostics(monkeypatch):
             app.config["space_store"].close()
 
 
+def test_departures_query_filtering_and_sorting(monkeypatch):
+    with TemporaryDirectory() as tmp:
+        monkeypatch.setenv("SPACE_TRAFFIC_DB_PATH", f"{tmp}/test.db")
+        monkeypatch.setenv("SPACE_TRAFFIC_DISABLE_GENERATOR", "true")
+
+        app = create_app()
+        client = app.test_client()
+        store = app.config["space_store"]
+        try:
+            store.insert_departure(
+                {
+                    "event_uid": "M4-EVT-1",
+                    "departure_time": "2100-01-01T00:00:00+00:00",
+                    "ship_id": "SHIP-0001",
+                    "source_station_id": "STN-PLANET-EARTH",
+                    "destination_station_id": "STN-PLANET-MARS",
+                    "est_arrival_time": "2100-01-03T00:00:00+00:00",
+                    "scenario": "war",
+                    "fault_flags": [],
+                    "malformed": False,
+                    "payload_json": '{"event_uid":"M4-EVT-1"}',
+                }
+            )
+            store.insert_departure(
+                {
+                    "event_uid": "M4-EVT-2",
+                    "departure_time": "2100-01-01T06:00:00+00:00",
+                    "ship_id": "SHIP-0002",
+                    "source_station_id": "STN-PLANET-EARTH",
+                    "destination_station_id": "STN-PLANET-JUPITER",
+                    "est_arrival_time": "2100-01-04T00:00:00+00:00",
+                    "scenario": "baseline",
+                    "fault_flags": ["corrupt_payload"],
+                    "malformed": True,
+                    "payload_json": '"malformed-payload"',
+                }
+            )
+            store.insert_departure(
+                {
+                    "event_uid": "M4-EVT-3",
+                    "departure_time": "2100-01-02T12:00:00+00:00",
+                    "ship_id": "SHIP-0001",
+                    "source_station_id": "STN-PLANET-MARS",
+                    "destination_station_id": "STN-PLANET-EARTH",
+                    "est_arrival_time": "2100-01-05T12:00:00+00:00",
+                    "scenario": "war",
+                    "fault_flags": [],
+                    "malformed": False,
+                    "payload_json": '{"event_uid":"M4-EVT-3"}',
+                }
+            )
+
+            response = client.get(
+                "/departures?ship_id=SHIP-0001&since_time=2100-01-01T00:00:00+00:00"
+                "&until_time=2100-01-02T23:59:59+00:00&order_by=departure_time&order=desc"
+            )
+            assert response.status_code == 200
+            departures = response.get_json()["departures"]
+            assert [row["event_uid"] for row in departures] == ["M4-EVT-1", "M4-EVT-3"]
+
+            malformed_response = client.get("/departures?malformed=true")
+            assert malformed_response.status_code == 200
+            malformed_departures = malformed_response.get_json()["departures"]
+            assert len(malformed_departures) == 1
+            assert malformed_departures[0]["event_uid"] == "M4-EVT-2"
+
+            scenario_response = client.get("/departures?scenario=war&order_by=departure_time&order=asc")
+            assert scenario_response.status_code == 200
+            scenario_departures = scenario_response.get_json()["departures"]
+            assert [row["event_uid"] for row in scenario_departures] == ["M4-EVT-1", "M4-EVT-3"]
+        finally:
+            app.config["space_store"].close()
+
+
+def test_control_events_query_filtering_and_sorting(monkeypatch):
+    with TemporaryDirectory() as tmp:
+        monkeypatch.setenv("SPACE_TRAFFIC_DB_PATH", f"{tmp}/test.db")
+        monkeypatch.setenv("SPACE_TRAFFIC_DISABLE_GENERATOR", "true")
+
+        app = create_app()
+        client = app.test_client()
+        store = app.config["space_store"]
+        try:
+            store.insert_control_event(
+                event_type="scenario",
+                action="activated",
+                payload={"name": "war"},
+                event_time="2100-01-01T00:00:00+00:00",
+            )
+            store.insert_control_event(
+                event_type="fault",
+                action="activated",
+                payload={"name": "delay_spike"},
+                event_time="2100-01-01T03:00:00+00:00",
+            )
+            store.insert_control_event(
+                event_type="scenario",
+                action="deactivated",
+                payload={"name": "war"},
+                event_time="2100-01-01T06:00:00+00:00",
+            )
+
+            response = client.get(
+                "/control-events?event_type=scenario&since_time=2100-01-01T00:00:00+00:00"
+                "&until_time=2100-01-01T23:59:59+00:00&order_by=event_time&order=desc"
+            )
+            assert response.status_code == 200
+            events = response.get_json()["control_events"]
+            assert [row["action"] for row in events] == ["activated", "deactivated"]
+
+            activated_only = client.get("/control-events?action=activated")
+            assert activated_only.status_code == 200
+            activated_events = activated_only.get_json()["control_events"]
+            assert len(activated_events) == 2
+            assert {row["event_type"] for row in activated_events} == {"scenario", "fault"}
+        finally:
+            app.config["space_store"].close()
+
+
+def test_departures_stream_replay_supports_selective_filters(monkeypatch):
+    with TemporaryDirectory() as tmp:
+        monkeypatch.setenv("SPACE_TRAFFIC_DB_PATH", f"{tmp}/test.db")
+        monkeypatch.setenv("SPACE_TRAFFIC_DISABLE_GENERATOR", "true")
+
+        app = create_app()
+        client = app.test_client()
+        store = app.config["space_store"]
+        try:
+            store.insert_departure(
+                {
+                    "event_uid": "M4-STREAM-DEP-1",
+                    "departure_time": "2100-01-01T00:00:00+00:00",
+                    "ship_id": "SHIP-0001",
+                    "source_station_id": "STN-PLANET-EARTH",
+                    "destination_station_id": "STN-PLANET-MARS",
+                    "est_arrival_time": "2100-01-03T00:00:00+00:00",
+                    "scenario": "war",
+                    "fault_flags": [],
+                    "malformed": False,
+                    "payload_json": '{"event_uid":"M4-STREAM-DEP-1"}',
+                }
+            )
+            store.insert_departure(
+                {
+                    "event_uid": "M4-STREAM-DEP-2",
+                    "departure_time": "2100-01-01T01:00:00+00:00",
+                    "ship_id": "SHIP-0002",
+                    "source_station_id": "STN-PLANET-EARTH",
+                    "destination_station_id": "STN-PLANET-JUPITER",
+                    "est_arrival_time": "2100-01-04T00:00:00+00:00",
+                    "scenario": "baseline",
+                    "fault_flags": [],
+                    "malformed": False,
+                    "payload_json": '{"event_uid":"M4-STREAM-DEP-2"}',
+                }
+            )
+
+            response = client.get(
+                "/departures/stream?replay_limit=10&ship_id=SHIP-0001",
+                buffered=False,
+            )
+            first_chunk = next(iter(response.response)).decode("utf-8")
+            response.close()
+
+            assert "event: departure" in first_chunk
+            assert "M4-STREAM-DEP-1" in first_chunk
+            assert "M4-STREAM-DEP-2" not in first_chunk
+        finally:
+            app.config["space_store"].close()
+
+
+def test_control_events_stream_replay_supports_selective_filters(monkeypatch):
+    with TemporaryDirectory() as tmp:
+        monkeypatch.setenv("SPACE_TRAFFIC_DB_PATH", f"{tmp}/test.db")
+        monkeypatch.setenv("SPACE_TRAFFIC_DISABLE_GENERATOR", "true")
+
+        app = create_app()
+        client = app.test_client()
+        store = app.config["space_store"]
+        try:
+            store.insert_control_event(
+                event_type="scenario",
+                action="activated",
+                payload={"name": "war"},
+                event_time="2100-01-01T00:00:00+00:00",
+            )
+            store.insert_control_event(
+                event_type="fault",
+                action="activated",
+                payload={"name": "delay_spike"},
+                event_time="2100-01-01T01:00:00+00:00",
+            )
+
+            response = client.get(
+                "/control-events/stream?replay_limit=10&event_type=fault&action=activated",
+                buffered=False,
+            )
+            first_chunk = next(iter(response.response)).decode("utf-8")
+            response.close()
+
+            assert "event: control_event" in first_chunk
+            assert '"event_type": "fault"' in first_chunk
+            assert '"event_type": "scenario"' not in first_chunk
+        finally:
+            app.config["space_store"].close()
+
+
+def test_departures_export_ndjson_with_filters(monkeypatch):
+    with TemporaryDirectory() as tmp:
+        monkeypatch.setenv("SPACE_TRAFFIC_DB_PATH", f"{tmp}/test.db")
+        monkeypatch.setenv("SPACE_TRAFFIC_DISABLE_GENERATOR", "true")
+
+        app = create_app()
+        client = app.test_client()
+        store = app.config["space_store"]
+        try:
+            store.insert_departure(
+                {
+                    "event_uid": "M4-EXPORT-DEP-1",
+                    "departure_time": "2100-01-01T00:00:00+00:00",
+                    "ship_id": "SHIP-0001",
+                    "source_station_id": "STN-PLANET-EARTH",
+                    "destination_station_id": "STN-PLANET-MARS",
+                    "est_arrival_time": "2100-01-03T00:00:00+00:00",
+                    "scenario": "war",
+                    "fault_flags": [],
+                    "malformed": False,
+                    "payload_json": '{"event_uid":"M4-EXPORT-DEP-1"}',
+                }
+            )
+            store.insert_departure(
+                {
+                    "event_uid": "M4-EXPORT-DEP-2",
+                    "departure_time": "2100-01-01T01:00:00+00:00",
+                    "ship_id": "SHIP-0002",
+                    "source_station_id": "STN-PLANET-EARTH",
+                    "destination_station_id": "STN-PLANET-JUPITER",
+                    "est_arrival_time": "2100-01-04T00:00:00+00:00",
+                    "scenario": "baseline",
+                    "fault_flags": [],
+                    "malformed": False,
+                    "payload_json": '{"event_uid":"M4-EXPORT-DEP-2"}',
+                }
+            )
+
+            response = client.get("/departures/export?format=ndjson&ship_id=SHIP-0001")
+            assert response.status_code == 200
+            assert response.mimetype == "application/x-ndjson"
+            lines = [line for line in response.get_data(as_text=True).splitlines() if line.strip()]
+            assert len(lines) == 1
+            assert "M4-EXPORT-DEP-1" in lines[0]
+            assert "M4-EXPORT-DEP-2" not in lines[0]
+        finally:
+            app.config["space_store"].close()
+
+
+def test_departures_export_csv_and_invalid_format(monkeypatch):
+    with TemporaryDirectory() as tmp:
+        monkeypatch.setenv("SPACE_TRAFFIC_DB_PATH", f"{tmp}/test.db")
+        monkeypatch.setenv("SPACE_TRAFFIC_DISABLE_GENERATOR", "true")
+
+        app = create_app()
+        client = app.test_client()
+        store = app.config["space_store"]
+        try:
+            store.insert_departure(
+                {
+                    "event_uid": "M4-EXPORT-CSV-1",
+                    "departure_time": "2100-01-01T00:00:00+00:00",
+                    "ship_id": "SHIP-0003",
+                    "source_station_id": "STN-PLANET-MARS",
+                    "destination_station_id": "STN-PLANET-EARTH",
+                    "est_arrival_time": "2100-01-03T00:00:00+00:00",
+                    "scenario": "baseline",
+                    "fault_flags": ["delay"],
+                    "malformed": False,
+                    "payload_json": '{"event_uid":"M4-EXPORT-CSV-1"}',
+                }
+            )
+
+            csv_response = client.get("/departures/export?format=csv&limit=1")
+            assert csv_response.status_code == 200
+            assert csv_response.mimetype == "text/csv"
+            content = csv_response.get_data(as_text=True)
+            assert "event_uid" in content.splitlines()[0]
+            assert "M4-EXPORT-CSV-1" in content
+
+            invalid = client.get("/departures/export?format=xml")
+            assert invalid.status_code == 400
+            payload = invalid.get_json()
+            assert payload["error"] == "format must be one of: ndjson, csv"
+        finally:
+            app.config["space_store"].close()
+
+
+def test_control_events_export_ndjson_with_filters(monkeypatch):
+    with TemporaryDirectory() as tmp:
+        monkeypatch.setenv("SPACE_TRAFFIC_DB_PATH", f"{tmp}/test.db")
+        monkeypatch.setenv("SPACE_TRAFFIC_DISABLE_GENERATOR", "true")
+
+        app = create_app()
+        client = app.test_client()
+        store = app.config["space_store"]
+        try:
+            store.insert_control_event(
+                event_type="scenario",
+                action="activated",
+                payload={"name": "war"},
+                event_time="2100-01-01T00:00:00+00:00",
+            )
+            store.insert_control_event(
+                event_type="fault",
+                action="activated",
+                payload={"name": "delay_spike"},
+                event_time="2100-01-01T01:00:00+00:00",
+            )
+
+            response = client.get("/control-events/export?format=ndjson&event_type=fault")
+            assert response.status_code == 200
+            assert response.mimetype == "application/x-ndjson"
+            lines = [line for line in response.get_data(as_text=True).splitlines() if line.strip()]
+            assert len(lines) == 1
+            assert '"event_type":"fault"' in lines[0]
+            assert '"event_type":"scenario"' not in lines[0]
+        finally:
+            app.config["space_store"].close()
+
+
+def test_control_events_export_csv_and_invalid_format(monkeypatch):
+    with TemporaryDirectory() as tmp:
+        monkeypatch.setenv("SPACE_TRAFFIC_DB_PATH", f"{tmp}/test.db")
+        monkeypatch.setenv("SPACE_TRAFFIC_DISABLE_GENERATOR", "true")
+
+        app = create_app()
+        client = app.test_client()
+        store = app.config["space_store"]
+        try:
+            store.insert_control_event(
+                event_type="control",
+                action="reset",
+                payload={"seed": 123},
+                event_time="2100-01-01T00:00:00+00:00",
+            )
+
+            csv_response = client.get("/control-events/export?format=csv&limit=1")
+            assert csv_response.status_code == 200
+            assert csv_response.mimetype == "text/csv"
+            content = csv_response.get_data(as_text=True)
+            assert "event_type" in content.splitlines()[0]
+            assert "reset" in content
+
+            invalid = client.get("/control-events/export?format=xml")
+            assert invalid.status_code == 400
+            payload = invalid.get_json()
+            assert payload["error"] == "format must be one of: ndjson, csv"
+        finally:
+            app.config["space_store"].close()
+
+

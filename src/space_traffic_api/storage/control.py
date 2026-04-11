@@ -33,7 +33,12 @@ class ControlRepository:
     def list_events(
         self,
         since_id: int | None,
+        since_time: str | None,
+        until_time: str | None,
+        event_type: str | None,
+        action: str | None,
         limit: int,
+        order_by: str,
         order: str,
     ) -> list[dict[str, Any]]:
         where: list[str] = []
@@ -41,13 +46,26 @@ class ControlRepository:
         if since_id is not None:
             where.append("id > ?")
             params.append(since_id)
+        if since_time is not None:
+            where.append("event_time >= ?")
+            params.append(since_time)
+        if until_time is not None:
+            where.append("event_time <= ?")
+            params.append(until_time)
+        if event_type:
+            where.append("event_type = ?")
+            params.append(event_type)
+        if action:
+            where.append("action = ?")
+            params.append(action)
 
         query = "SELECT * FROM control_events"
         if where:
             query += " WHERE " + " AND ".join(where)
 
+        order_column = "id" if order_by.lower() != "event_time" else "event_time"
         direction = "DESC" if order.lower() == "desc" else "ASC"
-        query += f" ORDER BY id {direction} LIMIT ?"
+        query += f" ORDER BY {order_column} {direction}, id {direction} LIMIT ?"
         params.append(limit)
 
         with self._context.lock:

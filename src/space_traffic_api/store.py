@@ -338,13 +338,27 @@ class SQLiteStore:
         self,
         since_id: int | None,
         since_time: str | None,
+        until_time: str | None,
+        ship_id: str | None,
+        source_station_id: str | None,
+        destination_station_id: str | None,
+        scenario: str | None,
+        malformed: bool | None,
         limit: int,
+        order_by: str,
         order: str,
     ) -> list[dict[str, Any]]:
         return self.departures.list(
             since_id=since_id,
             since_time=since_time,
+            until_time=until_time,
+            ship_id=ship_id,
+            source_station_id=source_station_id,
+            destination_station_id=destination_station_id,
+            scenario=scenario,
+            malformed=malformed,
             limit=limit,
+            order_by=order_by,
             order=order,
         )
 
@@ -386,10 +400,24 @@ class SQLiteStore:
     def list_control_events(
         self,
         since_id: int | None,
+        since_time: str | None,
+        until_time: str | None,
+        event_type: str | None,
+        action: str | None,
         limit: int,
+        order_by: str,
         order: str,
     ) -> list[dict[str, Any]]:
-        return self.control.list_events(since_id=since_id, limit=limit, order=order)
+        return self.control.list_events(
+            since_id=since_id,
+            since_time=since_time,
+            until_time=until_time,
+            event_type=event_type,
+            action=action,
+            limit=limit,
+            order_by=order_by,
+            order=order,
+        )
 
     def get_counts(self) -> dict[str, int]:
         return {

@@ -45,11 +45,21 @@ class SimulationService:
 
     def stop(self, timeout: float = 2.0) -> None:
         self._clock_stop_event.set()
+        deadline = time.monotonic() + max(0.0, timeout)
         if self._generator.is_alive():
             self._generator.stop()
-            self._generator.join(timeout=timeout)
+            while self._generator.is_alive() and time.monotonic() < deadline:
+                try:
+                    self._generator.join(timeout=0.1)
+                except KeyboardInterrupt:
+                    # Shutdown must continue in teardown paths even if an interrupt arrives.
+                    continue
         if self._clock_thread is not None and self._clock_thread.is_alive():
-            self._clock_thread.join(timeout=timeout)
+            while self._clock_thread.is_alive() and time.monotonic() < deadline:
+                try:
+                    self._clock_thread.join(timeout=0.1)
+                except KeyboardInterrupt:
+                    continue
 
     def _run_clock(self) -> None:
         last = time.monotonic()
@@ -109,8 +119,27 @@ class SimulationService:
     def orbital_state_snapshot(self) -> dict[str, dict[str, Any]]:
         return self._generator.orbital_state_snapshot()
 
-    def list_control_events(self, since_id: int | None, limit: int, order: str) -> list[dict[str, Any]]:
-        return self._runtime.list_control_events(since_id=since_id, limit=limit, order=order)
+    def list_control_events(
+        self,
+        since_id: int | None,
+        since_time: str | None,
+        until_time: str | None,
+        event_type: str | None,
+        action: str | None,
+        limit: int,
+        order_by: str,
+        order: str,
+    ) -> list[dict[str, Any]]:
+        return self._runtime.list_control_events(
+            since_id=since_id,
+            since_time=since_time,
+            until_time=until_time,
+            event_type=event_type,
+            action=action,
+            limit=limit,
+            order_by=order_by,
+            order=order,
+        )
 
     def subscribe_departures(self) -> queue.Queue[dict[str, Any]]:
         return self._generator.subscribe()

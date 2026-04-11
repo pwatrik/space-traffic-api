@@ -6,6 +6,9 @@ info:
     Simulated solar-system shipping traffic API for data-engineering demos.
 
     This API is fully public and does not require authentication.
+
+    Integration examples and compatibility guidance:
+    - docs/api-consumption-guide.md
 servers:
   - url: http://localhost:8000
     description: Local development server
@@ -523,7 +526,39 @@ paths:
           schema:
             type: string
             format: date-time
+        - name: until_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: ship_id
+          in: query
+          schema:
+            type: string
+        - name: source_station_id
+          in: query
+          schema:
+            type: string
+        - name: destination_station_id
+          in: query
+          schema:
+            type: string
+        - name: scenario
+          in: query
+          schema:
+            type: string
+        - name: malformed
+          in: query
+          schema:
+            type: string
+            enum: ["0", "1", "true", "false", "yes", "no", "on", "off"]
         - $ref: "#/components/parameters/Limit1000"
+        - name: order_by
+          in: query
+          schema:
+            type: string
+            enum: [id, departure_time]
+            default: id
         - $ref: "#/components/parameters/Order"
       responses:
         "200":
@@ -547,6 +582,49 @@ paths:
   /departures/stream:
     get:
       summary: Stream departure events (SSE)
+      parameters:
+        - name: replay_since_id
+          in: query
+          schema:
+            type: integer
+        - name: replay_limit
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 1000
+            default: 0
+        - name: since_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: until_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: ship_id
+          in: query
+          schema:
+            type: string
+        - name: source_station_id
+          in: query
+          schema:
+            type: string
+        - name: destination_station_id
+          in: query
+          schema:
+            type: string
+        - name: scenario
+          in: query
+          schema:
+            type: string
+        - name: malformed
+          in: query
+          schema:
+            type: string
+            enum: ["0", "1", "true", "false", "yes", "no", "on", "off"]
       responses:
         "200":
           description: text/event-stream
@@ -555,12 +633,110 @@ paths:
               schema:
                 type: string
 
+  /departures/export:
+    get:
+      summary: Export departures as NDJSON or CSV
+      parameters:
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [ndjson, csv]
+            default: ndjson
+        - $ref: "#/components/parameters/SinceId"
+        - name: since_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: until_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: ship_id
+          in: query
+          schema:
+            type: string
+        - name: source_station_id
+          in: query
+          schema:
+            type: string
+        - name: destination_station_id
+          in: query
+          schema:
+            type: string
+        - name: scenario
+          in: query
+          schema:
+            type: string
+        - name: malformed
+          in: query
+          schema:
+            type: string
+            enum: ["0", "1", "true", "false", "yes", "no", "on", "off"]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+            default: 1000
+        - name: order_by
+          in: query
+          schema:
+            type: string
+            enum: [id, departure_time]
+            default: id
+        - $ref: "#/components/parameters/Order"
+      responses:
+        "200":
+          description: Exported departures in selected format
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+            text/csv:
+              schema:
+                type: string
+        "400":
+          description: Invalid export format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /control-events:
     get:
       summary: Poll control-plane events
       parameters:
         - $ref: "#/components/parameters/SinceId"
+        - name: since_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: until_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: event_type
+          in: query
+          schema:
+            type: string
+            enum: [control, scenario, fault, lifecycle, pirate]
+        - name: action
+          in: query
+          schema:
+            type: string
         - $ref: "#/components/parameters/Limit1000"
+        - name: order_by
+          in: query
+          schema:
+            type: string
+            enum: [id, event_time]
+            default: id
         - $ref: "#/components/parameters/Order"
       responses:
         "200":
@@ -583,6 +759,37 @@ paths:
   /control-events/stream:
     get:
       summary: Stream control-plane events (SSE)
+      parameters:
+        - name: replay_since_id
+          in: query
+          schema:
+            type: integer
+        - name: replay_limit
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 1000
+            default: 0
+        - name: since_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: until_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: event_type
+          in: query
+          schema:
+            type: string
+            enum: [control, scenario, fault, lifecycle, pirate]
+        - name: action
+          in: query
+          schema:
+            type: string
       responses:
         "200":
           description: text/event-stream
@@ -590,6 +797,67 @@ paths:
             text/event-stream:
               schema:
                 type: string
+
+  /control-events/export:
+    get:
+      summary: Export control events as NDJSON or CSV
+      parameters:
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [ndjson, csv]
+            default: ndjson
+        - $ref: "#/components/parameters/SinceId"
+        - name: since_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: until_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: event_type
+          in: query
+          schema:
+            type: string
+            enum: [control, scenario, fault, lifecycle, pirate]
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+            default: 1000
+        - name: order_by
+          in: query
+          schema:
+            type: string
+            enum: [id, event_time]
+            default: id
+        - $ref: "#/components/parameters/Order"
+      responses:
+        "200":
+          description: Exported control events in selected format
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+            text/csv:
+              schema:
+                type: string
+        "400":
+          description: Invalid export format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /config:
     get:
