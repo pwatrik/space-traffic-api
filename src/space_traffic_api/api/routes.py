@@ -13,6 +13,17 @@ from ..store import SQLiteStore
 from .serializers import serialize_control_event, serialize_departure
 
 
+def _parse_optional_bool(value: str | None) -> bool | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return None
+
+
 def create_api_blueprint(
     store: SQLiteStore,
     simulation: SimulationService,
@@ -123,13 +134,27 @@ def create_api_blueprint(
     def departures() -> Response:
         since_id = request.args.get("since_id", type=int)
         since_time = request.args.get("since_time")
+        until_time = request.args.get("until_time")
+        ship_id = request.args.get("ship_id")
+        source_station_id = request.args.get("source_station_id")
+        destination_station_id = request.args.get("destination_station_id")
+        scenario = request.args.get("scenario")
+        malformed = _parse_optional_bool(request.args.get("malformed"))
         limit = min(1000, max(1, request.args.get("limit", default=100, type=int)))
+        order_by = request.args.get("order_by", default="id")
         order = request.args.get("order", default="asc")
 
         rows = store.list_departures(
             since_id=since_id,
             since_time=since_time,
+            until_time=until_time,
+            ship_id=ship_id,
+            source_station_id=source_station_id,
+            destination_station_id=destination_station_id,
+            scenario=scenario,
+            malformed=malformed,
             limit=limit,
+            order_by=order_by,
             order=order,
         )
 
@@ -168,9 +193,23 @@ def create_api_blueprint(
     @bp.get("/control-events")
     def control_events() -> Response:
         since_id = request.args.get("since_id", type=int)
+        since_time = request.args.get("since_time")
+        until_time = request.args.get("until_time")
+        event_type = request.args.get("event_type")
+        action = request.args.get("action")
         limit = min(1000, max(1, request.args.get("limit", default=100, type=int)))
+        order_by = request.args.get("order_by", default="id")
         order = request.args.get("order", default="asc")
-        rows = simulation.list_control_events(since_id=since_id, limit=limit, order=order)
+        rows = simulation.list_control_events(
+            since_id=since_id,
+            since_time=since_time,
+            until_time=until_time,
+            event_type=event_type,
+            action=action,
+            limit=limit,
+            order_by=order_by,
+            order=order,
+        )
         serialized = [serialize_control_event(row) for row in rows]
         next_since_id = serialized[-1]["id"] if serialized else since_id
         return jsonify({"control_events": serialized, "count": len(serialized), "next_since_id": next_since_id})

@@ -43,7 +43,14 @@ class DepartureRepository:
         self,
         since_id: int | None,
         since_time: str | None,
+        until_time: str | None,
+        ship_id: str | None,
+        source_station_id: str | None,
+        destination_station_id: str | None,
+        scenario: str | None,
+        malformed: bool | None,
         limit: int,
+        order_by: str,
         order: str,
     ) -> list[dict[str, Any]]:
         where: list[str] = []
@@ -55,13 +62,32 @@ class DepartureRepository:
         if since_time is not None:
             where.append("departure_time >= ?")
             params.append(since_time)
+        if until_time is not None:
+            where.append("departure_time <= ?")
+            params.append(until_time)
+        if ship_id:
+            where.append("ship_id = ?")
+            params.append(ship_id)
+        if source_station_id:
+            where.append("source_station_id = ?")
+            params.append(source_station_id)
+        if destination_station_id:
+            where.append("destination_station_id = ?")
+            params.append(destination_station_id)
+        if scenario:
+            where.append("scenario = ?")
+            params.append(scenario)
+        if malformed is not None:
+            where.append("malformed = ?")
+            params.append(1 if malformed else 0)
 
         query = "SELECT * FROM departures"
         if where:
             query += " WHERE " + " AND ".join(where)
 
+        order_column = "id" if order_by.lower() != "departure_time" else "departure_time"
         direction = "DESC" if order.lower() == "desc" else "ASC"
-        query += f" ORDER BY id {direction} LIMIT ?"
+        query += f" ORDER BY {order_column} {direction}, id {direction} LIMIT ?"
         params.append(limit)
 
         with self._context.lock:

@@ -109,8 +109,27 @@ class SimulationService:
     def orbital_state_snapshot(self) -> dict[str, dict[str, Any]]:
         return self._generator.orbital_state_snapshot()
 
-    def list_control_events(self, since_id: int | None, limit: int, order: str) -> list[dict[str, Any]]:
-        return self._runtime.list_control_events(since_id=since_id, limit=limit, order=order)
+    def list_control_events(
+        self,
+        since_id: int | None,
+        since_time: str | None,
+        until_time: str | None,
+        event_type: str | None,
+        action: str | None,
+        limit: int,
+        order_by: str,
+        order: str,
+    ) -> list[dict[str, Any]]:
+        return self._runtime.list_control_events(
+            since_id=since_id,
+            since_time=since_time,
+            until_time=until_time,
+            event_type=event_type,
+            action=action,
+            limit=limit,
+            order_by=order_by,
+            order=order,
+        )
 
     def subscribe_departures(self) -> queue.Queue[dict[str, Any]]:
         return self._generator.subscribe()

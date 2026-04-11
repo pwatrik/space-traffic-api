@@ -523,7 +523,39 @@ paths:
           schema:
             type: string
             format: date-time
+        - name: until_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: ship_id
+          in: query
+          schema:
+            type: string
+        - name: source_station_id
+          in: query
+          schema:
+            type: string
+        - name: destination_station_id
+          in: query
+          schema:
+            type: string
+        - name: scenario
+          in: query
+          schema:
+            type: string
+        - name: malformed
+          in: query
+          schema:
+            type: string
+            enum: ["0", "1", "true", "false", "yes", "no", "on", "off"]
         - $ref: "#/components/parameters/Limit1000"
+        - name: order_by
+          in: query
+          schema:
+            type: string
+            enum: [id, departure_time]
+            default: id
         - $ref: "#/components/parameters/Order"
       responses:
         "200":
@@ -560,7 +592,32 @@ paths:
       summary: Poll control-plane events
       parameters:
         - $ref: "#/components/parameters/SinceId"
+        - name: since_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: until_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: event_type
+          in: query
+          schema:
+            type: string
+            enum: [control, scenario, fault, lifecycle, pirate]
+        - name: action
+          in: query
+          schema:
+            type: string
         - $ref: "#/components/parameters/Limit1000"
+        - name: order_by
+          in: query
+          schema:
+            type: string
+            enum: [id, event_time]
+            default: id
         - $ref: "#/components/parameters/Order"
       responses:
         "200":

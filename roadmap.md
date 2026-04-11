@@ -312,6 +312,12 @@ Upgrade engine internals so advanced simulation behavior remains stable, reprodu
 
 ## Milestone 4: API Surface and Integration Enhancements
 Estimated effort: 7-10 sessions
+Status: In progress
+
+### Progress
+- Completed: Session 1 implemented richer departures/control-events query ergonomics (time windows, typed filters, and order-by controls).
+- Completed: Session 1 added API contract tests for departures/control-events filtering and sorting behavior.
+- Completed: Session 1 documented new query parameters in OpenAPI.
 
 ### Goal
 Expose richer simulation capabilities through stable, usable API contracts.
