@@ -45,11 +45,21 @@ class SimulationService:
 
     def stop(self, timeout: float = 2.0) -> None:
         self._clock_stop_event.set()
+        deadline = time.monotonic() + max(0.0, timeout)
         if self._generator.is_alive():
             self._generator.stop()
-            self._generator.join(timeout=timeout)
+            while self._generator.is_alive() and time.monotonic() < deadline:
+                try:
+                    self._generator.join(timeout=0.1)
+                except KeyboardInterrupt:
+                    # Shutdown must continue in teardown paths even if an interrupt arrives.
+                    continue
         if self._clock_thread is not None and self._clock_thread.is_alive():
-            self._clock_thread.join(timeout=timeout)
+            while self._clock_thread.is_alive() and time.monotonic() < deadline:
+                try:
+                    self._clock_thread.join(timeout=0.1)
+                except KeyboardInterrupt:
+                    continue
 
     def _run_clock(self) -> None:
         last = time.monotonic()

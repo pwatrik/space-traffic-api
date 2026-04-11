@@ -78,6 +78,21 @@ curl "http://localhost:8000/control-events/export?format=csv&action=reset" > con
 - Keep exporters strict on format values (`ndjson`, `csv`) and fail fast on invalid values.
 - For exactly-once downstream semantics, deduplicate by primary key (`id`) or event UID where available.
 
+## Backward Compatibility Contract
+
+The API follows additive-first evolution and stable cursor semantics.
+
+- Polling endpoints keep `next_since_id` semantics stable; cursor values are monotonic and safe for resume.
+- Streaming endpoints preserve event ordering within each stream and keep replay bootstrap behavior (`replay_since_id`, `replay_limit`) backward compatible.
+- Export endpoints preserve supported format values (`ndjson`, `csv`); unsupported formats continue to return `400` with a machine-readable `error` field.
+- New fields may be added to JSON payloads over time, but existing stable field names are not removed/renamed in patch releases.
+
+Consumer recommendations:
+
+1. Treat unknown JSON fields as forward-compatible extensions.
+2. Persist cursor checkpoints after successful downstream commit.
+3. Use idempotent upserts keyed by `id` (and `event_uid` for departures when available).
+
 ## Suggested Integration Strategy
 
 1. Bootstrap historical window with export endpoint (`ndjson`).

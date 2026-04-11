@@ -312,7 +312,7 @@ Upgrade engine internals so advanced simulation behavior remains stable, reprodu
 
 ## Milestone 4: API Surface and Integration Enhancements
 Estimated effort: 7-10 sessions
-Status: In progress
+Status: Complete
 
 ### Progress
 - Completed: Session 1 implemented richer departures/control-events query ergonomics (time windows, typed filters, and order-by controls).
@@ -328,6 +328,9 @@ Status: In progress
 - Completed: Session 5 added API coverage for control-event export filtering/format validation and documented export contract in OpenAPI.
 - Completed: Session 6 added operator-facing poll/stream/export integration examples and compatibility guidance.
 - Completed: Session 6 linked usage guidance from OpenAPI description for discoverability.
+- Completed: Session 7 documented explicit backward-compatibility guidance for poll/stream/export usage and updated endpoint references.
+- Completed: Session 7 hardened simulation shutdown join handling to prevent intermittent teardown lock/interrupt failures in shadow flows.
+- Verified: full regression suite passed (`159 passed`).
 
 ### Goal
 Expose richer simulation capabilities through stable, usable API contracts.
