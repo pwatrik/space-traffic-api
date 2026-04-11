@@ -35,12 +35,21 @@ def _parse_iso_datetime(value: object) -> datetime | None:
         return None
 
 
+def _normalize_dt(dt: datetime | None) -> datetime | None:
+    """Return dt converted to UTC-aware; naive datetimes are assumed UTC."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
+
+
 def _matches_time_window(value: str | None, since_time: str | None, until_time: str | None) -> bool:
     if value is None:
         return False
-    event_time = _parse_iso_datetime(value)
-    since_dt = _parse_iso_datetime(since_time)
-    until_dt = _parse_iso_datetime(until_time)
+    event_time = _normalize_dt(_parse_iso_datetime(value))
+    since_dt = _normalize_dt(_parse_iso_datetime(since_time))
+    until_dt = _normalize_dt(_parse_iso_datetime(until_time))
     if event_time is None:
         return False
     if since_dt is not None and event_time < since_dt:
@@ -228,7 +237,7 @@ def create_api_blueprint(
         )
 
         serialized = [serialize_departure(row) for row in rows]
-        next_since_id = serialized[-1]["id"] if serialized else since_id
+        next_since_id = max((r["id"] for r in serialized), default=since_id)
 
         return jsonify(
             {
@@ -334,7 +343,7 @@ def create_api_blueprint(
                     )
                     for row in replay_rows:
                         payload = serialize_departure(row)
-                        yield f"event: departure\\ndata: {json.dumps(payload)}\\n\\n"
+                        yield f"event: departure\ndata: {json.dumps(payload)}\n\n"
 
                 while True:
                     try:
@@ -382,7 +391,7 @@ def create_api_blueprint(
             order=order,
         )
         serialized = [serialize_control_event(row) for row in rows]
-        next_since_id = serialized[-1]["id"] if serialized else since_id
+        next_since_id = max((r["id"] for r in serialized), default=since_id)
         return jsonify({"control_events": serialized, "count": len(serialized), "next_since_id": next_since_id})
 
     @bp.get("/control-events/export")
@@ -456,7 +465,7 @@ def create_api_blueprint(
                     )
                     for row in replay_rows:
                         payload = serialize_control_event(row)
-                        yield f"event: control_event\\ndata: {json.dumps(payload)}\\n\\n"
+                        yield f"event: control_event\ndata: {json.dumps(payload)}\n\n"
 
                 while True:
                     try:
