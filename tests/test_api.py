@@ -503,3 +503,91 @@ def test_control_events_query_filtering_and_sorting(monkeypatch):
             app.config["space_store"].close()
 
 
+def test_departures_stream_replay_supports_selective_filters(monkeypatch):
+    with TemporaryDirectory() as tmp:
+        monkeypatch.setenv("SPACE_TRAFFIC_DB_PATH", f"{tmp}/test.db")
+        monkeypatch.setenv("SPACE_TRAFFIC_DISABLE_GENERATOR", "true")
+
+        app = create_app()
+        client = app.test_client()
+        store = app.config["space_store"]
+        try:
+            store.insert_departure(
+                {
+                    "event_uid": "M4-STREAM-DEP-1",
+                    "departure_time": "2100-01-01T00:00:00+00:00",
+                    "ship_id": "SHIP-0001",
+                    "source_station_id": "STN-PLANET-EARTH",
+                    "destination_station_id": "STN-PLANET-MARS",
+                    "est_arrival_time": "2100-01-03T00:00:00+00:00",
+                    "scenario": "war",
+                    "fault_flags": [],
+                    "malformed": False,
+                    "payload_json": '{"event_uid":"M4-STREAM-DEP-1"}',
+                }
+            )
+            store.insert_departure(
+                {
+                    "event_uid": "M4-STREAM-DEP-2",
+                    "departure_time": "2100-01-01T01:00:00+00:00",
+                    "ship_id": "SHIP-0002",
+                    "source_station_id": "STN-PLANET-EARTH",
+                    "destination_station_id": "STN-PLANET-JUPITER",
+                    "est_arrival_time": "2100-01-04T00:00:00+00:00",
+                    "scenario": "baseline",
+                    "fault_flags": [],
+                    "malformed": False,
+                    "payload_json": '{"event_uid":"M4-STREAM-DEP-2"}',
+                }
+            )
+
+            response = client.get(
+                "/departures/stream?replay_limit=10&ship_id=SHIP-0001",
+                buffered=False,
+            )
+            first_chunk = next(iter(response.response)).decode("utf-8")
+            response.close()
+
+            assert "event: departure" in first_chunk
+            assert "M4-STREAM-DEP-1" in first_chunk
+            assert "M4-STREAM-DEP-2" not in first_chunk
+        finally:
+            app.config["space_store"].close()
+
+
+def test_control_events_stream_replay_supports_selective_filters(monkeypatch):
+    with TemporaryDirectory() as tmp:
+        monkeypatch.setenv("SPACE_TRAFFIC_DB_PATH", f"{tmp}/test.db")
+        monkeypatch.setenv("SPACE_TRAFFIC_DISABLE_GENERATOR", "true")
+
+        app = create_app()
+        client = app.test_client()
+        store = app.config["space_store"]
+        try:
+            store.insert_control_event(
+                event_type="scenario",
+                action="activated",
+                payload={"name": "war"},
+                event_time="2100-01-01T00:00:00+00:00",
+            )
+            store.insert_control_event(
+                event_type="fault",
+                action="activated",
+                payload={"name": "delay_spike"},
+                event_time="2100-01-01T01:00:00+00:00",
+            )
+
+            response = client.get(
+                "/control-events/stream?replay_limit=10&event_type=fault&action=activated",
+                buffered=False,
+            )
+            first_chunk = next(iter(response.response)).decode("utf-8")
+            response.close()
+
+            assert "event: control_event" in first_chunk
+            assert '"event_type": "fault"' in first_chunk
+            assert '"event_type": "scenario"' not in first_chunk
+        finally:
+            app.config["space_store"].close()
+
+

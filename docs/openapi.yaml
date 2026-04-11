@@ -579,6 +579,49 @@ paths:
   /departures/stream:
     get:
       summary: Stream departure events (SSE)
+      parameters:
+        - name: replay_since_id
+          in: query
+          schema:
+            type: integer
+        - name: replay_limit
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 1000
+            default: 0
+        - name: since_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: until_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: ship_id
+          in: query
+          schema:
+            type: string
+        - name: source_station_id
+          in: query
+          schema:
+            type: string
+        - name: destination_station_id
+          in: query
+          schema:
+            type: string
+        - name: scenario
+          in: query
+          schema:
+            type: string
+        - name: malformed
+          in: query
+          schema:
+            type: string
+            enum: ["0", "1", "true", "false", "yes", "no", "on", "off"]
       responses:
         "200":
           description: text/event-stream
@@ -640,6 +683,37 @@ paths:
   /control-events/stream:
     get:
       summary: Stream control-plane events (SSE)
+      parameters:
+        - name: replay_since_id
+          in: query
+          schema:
+            type: integer
+        - name: replay_limit
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 1000
+            default: 0
+        - name: since_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: until_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: event_type
+          in: query
+          schema:
+            type: string
+            enum: [control, scenario, fault, lifecycle, pirate]
+        - name: action
+          in: query
+          schema:
+            type: string
       responses:
         "200":
           description: text/event-stream

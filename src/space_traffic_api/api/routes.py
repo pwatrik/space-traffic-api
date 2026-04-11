@@ -24,6 +24,73 @@ def _parse_optional_bool(value: str | None) -> bool | None:
     return None
 
 
+def _parse_iso_datetime(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _matches_time_window(value: str | None, since_time: str | None, until_time: str | None) -> bool:
+    if value is None:
+        return False
+    event_time = _parse_iso_datetime(value)
+    since_dt = _parse_iso_datetime(since_time)
+    until_dt = _parse_iso_datetime(until_time)
+    if event_time is None:
+        return False
+    if since_dt is not None and event_time < since_dt:
+        return False
+    if until_dt is not None and event_time > until_dt:
+        return False
+    return True
+
+
+def _matches_departure_filters(
+    payload: dict[str, object],
+    *,
+    since_time: str | None,
+    until_time: str | None,
+    ship_id: str | None,
+    source_station_id: str | None,
+    destination_station_id: str | None,
+    scenario: str | None,
+    malformed: bool | None,
+) -> bool:
+    if not _matches_time_window(payload.get("departure_time"), since_time, until_time):
+        return False
+    if ship_id and payload.get("ship_id") != ship_id:
+        return False
+    if source_station_id and payload.get("source_station_id") != source_station_id:
+        return False
+    if destination_station_id and payload.get("destination_station_id") != destination_station_id:
+        return False
+    if scenario and payload.get("scenario") != scenario:
+        return False
+    if malformed is not None and bool(payload.get("malformed")) != malformed:
+        return False
+    return True
+
+
+def _matches_control_event_filters(
+    payload: dict[str, object],
+    *,
+    since_time: str | None,
+    until_time: str | None,
+    event_type: str | None,
+    action: str | None,
+) -> bool:
+    if not _matches_time_window(payload.get("event_time"), since_time, until_time):
+        return False
+    if event_type and payload.get("event_type") != event_type:
+        return False
+    if action and payload.get("action") != action:
+        return False
+    return True
+
+
 def create_api_blueprint(
     store: SQLiteStore,
     simulation: SimulationService,
@@ -171,15 +238,53 @@ def create_api_blueprint(
 
     @bp.get("/departures/stream")
     def departures_stream() -> Response:
+        replay_since_id = request.args.get("replay_since_id", type=int)
+        replay_limit = min(1000, max(0, request.args.get("replay_limit", default=0, type=int)))
+        since_time = request.args.get("since_time")
+        until_time = request.args.get("until_time")
+        ship_id = request.args.get("ship_id")
+        source_station_id = request.args.get("source_station_id")
+        destination_station_id = request.args.get("destination_station_id")
+        scenario = request.args.get("scenario")
+        malformed = _parse_optional_bool(request.args.get("malformed"))
         subscriber = simulation.subscribe_departures()
 
         def event_stream():
             last_heartbeat = time.time()
             try:
+                if replay_limit > 0:
+                    replay_rows = store.list_departures(
+                        since_id=replay_since_id,
+                        since_time=since_time,
+                        until_time=until_time,
+                        ship_id=ship_id,
+                        source_station_id=source_station_id,
+                        destination_station_id=destination_station_id,
+                        scenario=scenario,
+                        malformed=malformed,
+                        limit=replay_limit,
+                        order_by="id",
+                        order="asc",
+                    )
+                    for row in replay_rows:
+                        payload = serialize_departure(row)
+                        yield f"event: departure\\ndata: {json.dumps(payload)}\\n\\n"
+
                 while True:
                     try:
                         row = subscriber.get(timeout=1.0)
                         payload = serialize_departure(row)
+                        if not _matches_departure_filters(
+                            payload,
+                            since_time=since_time,
+                            until_time=until_time,
+                            ship_id=ship_id,
+                            source_station_id=source_station_id,
+                            destination_station_id=destination_station_id,
+                            scenario=scenario,
+                            malformed=malformed,
+                        ):
+                            continue
                         yield f"event: departure\ndata: {json.dumps(payload)}\n\n"
                     except queue.Empty:
                         if time.time() - last_heartbeat >= 10:
@@ -216,15 +321,44 @@ def create_api_blueprint(
 
     @bp.get("/control-events/stream")
     def control_events_stream() -> Response:
+        replay_since_id = request.args.get("replay_since_id", type=int)
+        replay_limit = min(1000, max(0, request.args.get("replay_limit", default=0, type=int)))
+        since_time = request.args.get("since_time")
+        until_time = request.args.get("until_time")
+        event_type = request.args.get("event_type")
+        action = request.args.get("action")
         subscriber = simulation.subscribe_control_events()
 
         def event_stream():
             last_heartbeat = time.time()
             try:
+                if replay_limit > 0:
+                    replay_rows = simulation.list_control_events(
+                        since_id=replay_since_id,
+                        since_time=since_time,
+                        until_time=until_time,
+                        event_type=event_type,
+                        action=action,
+                        limit=replay_limit,
+                        order_by="id",
+                        order="asc",
+                    )
+                    for row in replay_rows:
+                        payload = serialize_control_event(row)
+                        yield f"event: control_event\\ndata: {json.dumps(payload)}\\n\\n"
+
                 while True:
                     try:
                         row = subscriber.get(timeout=1.0)
                         payload = serialize_control_event(row)
+                        if not _matches_control_event_filters(
+                            payload,
+                            since_time=since_time,
+                            until_time=until_time,
+                            event_type=event_type,
+                            action=action,
+                        ):
+                            continue
                         yield f"event: control_event\ndata: {json.dumps(payload)}\n\n"
                     except queue.Empty:
                         if time.time() - last_heartbeat >= 10:

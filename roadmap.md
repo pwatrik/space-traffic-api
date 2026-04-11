@@ -318,6 +318,9 @@ Status: In progress
 - Completed: Session 1 implemented richer departures/control-events query ergonomics (time windows, typed filters, and order-by controls).
 - Completed: Session 1 added API contract tests for departures/control-events filtering and sorting behavior.
 - Completed: Session 1 documented new query parameters in OpenAPI.
+- Completed: Session 2 added replay bootstrap and selective-consumption filters to departures/control-events SSE streams.
+- Completed: Session 2 added API coverage for filtered replay streaming behavior.
+- Completed: Session 2 documented stream replay/filter query parameters in OpenAPI.
 
 ### Goal
 Expose richer simulation capabilities through stable, usable API contracts.
