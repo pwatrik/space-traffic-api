@@ -630,6 +630,79 @@ paths:
               schema:
                 type: string
 
+  /departures/export:
+    get:
+      summary: Export departures as NDJSON or CSV
+      parameters:
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [ndjson, csv]
+            default: ndjson
+        - $ref: "#/components/parameters/SinceId"
+        - name: since_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: until_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: ship_id
+          in: query
+          schema:
+            type: string
+        - name: source_station_id
+          in: query
+          schema:
+            type: string
+        - name: destination_station_id
+          in: query
+          schema:
+            type: string
+        - name: scenario
+          in: query
+          schema:
+            type: string
+        - name: malformed
+          in: query
+          schema:
+            type: string
+            enum: ["0", "1", "true", "false", "yes", "no", "on", "off"]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+            default: 1000
+        - name: order_by
+          in: query
+          schema:
+            type: string
+            enum: [id, departure_time]
+            default: id
+        - $ref: "#/components/parameters/Order"
+      responses:
+        "200":
+          description: Exported departures in selected format
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+            text/csv:
+              schema:
+                type: string
+        "400":
+          description: Invalid export format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /control-events:
     get:
       summary: Poll control-plane events

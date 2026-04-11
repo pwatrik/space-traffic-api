@@ -322,6 +322,8 @@ Status: In progress
 - Completed: Session 2 added API coverage for filtered replay streaming behavior.
 - Completed: Session 2 documented stream replay/filter query parameters in OpenAPI.
 - Completed: Session 3 expanded API contract-shape coverage for stations, ships, ship-state, departures, and control-events responses.
+- Completed: Session 4 added departures integration export endpoint with NDJSON/CSV formats and shared query filters.
+- Completed: Session 4 added API coverage for export filtering/format validation and documented export contract in OpenAPI.
 
 ### Goal
 Expose richer simulation capabilities through stable, usable API contracts.

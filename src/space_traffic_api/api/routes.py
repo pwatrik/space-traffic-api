@@ -4,7 +4,9 @@ import json
 import pathlib
 import queue
 import time
+from csv import DictWriter
 from datetime import UTC, datetime
+from io import StringIO
 
 from flask import Blueprint, Response, jsonify, redirect, render_template, request
 
@@ -235,6 +237,70 @@ def create_api_blueprint(
                 "next_since_id": next_since_id,
             }
         )
+
+    @bp.get("/departures/export")
+    def departures_export() -> Response:
+        since_id = request.args.get("since_id", type=int)
+        since_time = request.args.get("since_time")
+        until_time = request.args.get("until_time")
+        ship_id = request.args.get("ship_id")
+        source_station_id = request.args.get("source_station_id")
+        destination_station_id = request.args.get("destination_station_id")
+        scenario = request.args.get("scenario")
+        malformed = _parse_optional_bool(request.args.get("malformed"))
+        limit = min(10000, max(1, request.args.get("limit", default=1000, type=int)))
+        order_by = request.args.get("order_by", default="id")
+        order = request.args.get("order", default="asc")
+        export_format = request.args.get("format", default="ndjson").strip().lower()
+
+        if export_format not in {"ndjson", "csv"}:
+            return jsonify({"error": "format must be one of: ndjson, csv"}), 400
+
+        rows = store.list_departures(
+            since_id=since_id,
+            since_time=since_time,
+            until_time=until_time,
+            ship_id=ship_id,
+            source_station_id=source_station_id,
+            destination_station_id=destination_station_id,
+            scenario=scenario,
+            malformed=malformed,
+            limit=limit,
+            order_by=order_by,
+            order=order,
+        )
+        serialized = [serialize_departure(row) for row in rows]
+
+        if export_format == "ndjson":
+            lines = [json.dumps(item, separators=(",", ":")) for item in serialized]
+            body = "\n".join(lines)
+            if body:
+                body += "\n"
+            return Response(body, mimetype="application/x-ndjson")
+
+        output = StringIO()
+        fieldnames = [
+            "id",
+            "event_uid",
+            "departure_time",
+            "ship_id",
+            "source_station_id",
+            "destination_station_id",
+            "est_arrival_time",
+            "scenario",
+            "fault_flags",
+            "malformed",
+            "payload",
+        ]
+        writer = DictWriter(output, fieldnames=fieldnames)
+        writer.writeheader()
+        for item in serialized:
+            row = dict(item)
+            row["fault_flags"] = json.dumps(row.get("fault_flags", []), separators=(",", ":"))
+            row["payload"] = json.dumps(row.get("payload"), separators=(",", ":"))
+            writer.writerow(row)
+
+        return Response(output.getvalue(), mimetype="text/csv")
 
     @bp.get("/departures/stream")
     def departures_stream() -> Response:
