@@ -304,6 +304,66 @@ class CatalogRepository:
 
             return len(updates)
 
+    def _apply_economy_impact_no_commit(
+        self,
+        conn: Any,
+        source_station_id: str,
+        destination_station_id: str,
+        rng: random.Random,
+        magnitude: float,
+    ) -> int:
+        """Apply departure economy impact within an already-open transaction.
+
+        Does NOT acquire the context lock and does NOT commit — the caller is
+        responsible for both.  Returns the number of station rows updated.
+        """
+        ids = [source_station_id]
+        if destination_station_id != source_station_id:
+            ids.append(destination_station_id)
+
+        placeholders = ",".join("?" for _ in ids)
+        rows = conn.execute(
+            f"SELECT id, economy_state FROM stations WHERE id IN ({placeholders})",
+            ids,
+        ).fetchall()
+
+        if not rows:
+            return 0
+
+        by_id = {str(row["id"]): row for row in rows}
+        updates: list[tuple[str, str]] = []
+
+        src_row = by_id.get(source_station_id)
+        if src_row:
+            src_state = self._parse_json_column(src_row["economy_state"])
+            src_supply = float(src_state.get("supply_index", 1.0) or 1.0)
+            supply_drop = magnitude * (0.8 + (rng.random() * 0.4))
+            src_state["supply_index"] = round(max(0.1, min(5.0, src_supply - supply_drop)), 4)
+            updates.append((json.dumps(src_state), source_station_id))
+
+        dst_row = by_id.get(destination_station_id)
+        if dst_row:
+            dst_state = self._parse_json_column(dst_row["economy_state"])
+            dst_demand = float(dst_state.get("demand_index", 1.0) or 1.0)
+            demand_relief = magnitude * (0.6 + (rng.random() * 0.4))
+            dst_state["demand_index"] = round(max(0.1, min(5.0, dst_demand - demand_relief)), 4)
+
+            # Arriving cargo eases destination price pressure — a shipment heading
+            # there signals incoming supply, nudging price slightly downward.
+            dst_price = float(dst_state.get("price_index", 1.0) or 1.0)
+            price_ease = magnitude * 0.3 * (0.8 + (rng.random() * 0.4))
+            dst_state["price_index"] = round(max(0.5, min(3.0, dst_price - price_ease)), 4)
+
+            updates.append((json.dumps(dst_state), destination_station_id))
+
+        if updates:
+            conn.executemany(
+                "UPDATE stations SET economy_state = ? WHERE id = ?",
+                updates,
+            )
+
+        return len(updates)
+
     def apply_departure_economy_impact(
         self,
         source_station_id: str,
@@ -318,55 +378,16 @@ class CatalogRepository:
         magnitude = max(0.001, min(0.2, float(magnitude)))
 
         with self._context.lock:
-            ids = [source_station_id]
-            if destination_station_id != source_station_id:
-                ids.append(destination_station_id)
-
-            placeholders = ",".join("?" for _ in ids)
-            rows = self._context.conn.execute(
-                f"SELECT id, economy_state FROM stations WHERE id IN ({placeholders})",
-                ids,
-            ).fetchall()
-
-            if not rows:
-                return 0
-
-            by_id = {str(row["id"]): row for row in rows}
-            updates: list[tuple[str, str]] = []
-
-            src_row = by_id.get(source_station_id)
-            if src_row:
-                src_state = self._parse_json_column(src_row["economy_state"])
-
-                src_supply = float(src_state.get("supply_index", 1.0) or 1.0)
-                supply_drop = magnitude * (0.8 + (rng.random() * 0.4))
-                src_state["supply_index"] = round(max(0.1, min(5.0, src_supply - supply_drop)), 4)
-                updates.append((json.dumps(src_state), source_station_id))
-
-            dst_row = by_id.get(destination_station_id)
-            if dst_row:
-                dst_state = self._parse_json_column(dst_row["economy_state"])
-
-                dst_demand = float(dst_state.get("demand_index", 1.0) or 1.0)
-                demand_relief = magnitude * (0.6 + (rng.random() * 0.4))
-                dst_state["demand_index"] = round(max(0.1, min(5.0, dst_demand - demand_relief)), 4)
-
-                # Arriving cargo eases destination price pressure — a shipment heading
-                # there signals incoming supply, nudging price slightly downward.
-                dst_price = float(dst_state.get("price_index", 1.0) or 1.0)
-                price_ease = magnitude * 0.3 * (0.8 + (rng.random() * 0.4))
-                dst_state["price_index"] = round(max(0.5, min(3.0, dst_price - price_ease)), 4)
-
-                updates.append((json.dumps(dst_state), destination_station_id))
-
-            if updates:
-                self._context.conn.executemany(
-                    "UPDATE stations SET economy_state = ? WHERE id = ?",
-                    updates,
-                )
+            updated = self._apply_economy_impact_no_commit(
+                conn=self._context.conn,
+                source_station_id=source_station_id,
+                destination_station_id=destination_station_id,
+                rng=rng,
+                magnitude=magnitude,
+            )
+            if updated:
                 self._context.conn.commit()
-
-            return len(updates)
+            return updated
 
     def get_economy_summary(self) -> dict[str, Any]:
         """Return aggregate price/supply/demand stats across all stations."""

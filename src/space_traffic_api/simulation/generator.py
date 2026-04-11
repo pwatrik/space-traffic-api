@@ -67,6 +67,7 @@ class DepartureGenerator(threading.Thread):
         self._naming = load_naming_config()
 
         self._rng: random.Random | None = None
+        self._economy_rng: random.Random | None = None
         self._sim_time: datetime | None = None
         self._event_counter = 0
         self._last_event_uid = ""
@@ -76,6 +77,7 @@ class DepartureGenerator(threading.Thread):
         self._next_ship_sequence = self._store.max_ship_sequence() + 1
         self._age_update_accumulator_days: float = 0.0
         self._economy_snapshot_accumulator_days: float = 0.0
+        self._economy_drift_accumulator_days: float = 0.0
         self._economy_snapshot_refresh_interval_days: float = 1.0 / 24.0  # once per simulated hour
         self._station_economy_cache = StationEconomyCache(self._station_lookup)
         self._destination_picker = PickDestinationOptimized(self._station_lookup, self._distance_groups)
@@ -91,6 +93,7 @@ class DepartureGenerator(threading.Thread):
         self._departures_window_seconds = 60.0
         self._departure_timestamps: deque[float] = deque()
         self._startup_launch_batch_size = 24
+        self._startup_launch_batch_size_min = 8
         self._startup_launch_queue: deque[dict[str, Any]] = deque()
 
     def stop(self) -> None:
@@ -202,6 +205,7 @@ class DepartureGenerator(threading.Thread):
 
         if self._rng is None:
             self._rng = random.Random(seed if det_mode else None)
+            self._economy_rng = random.Random((seed + 1_000_003) if det_mode else None)
             self._set_sim_time(state)
             self._initialize_orbital_state(state)
             self._startup_launch_queue.clear()
@@ -212,12 +216,14 @@ class DepartureGenerator(threading.Thread):
         if reset_marker and reset_marker != cache_key:
             self._last_reset_marker = reset_marker
             self._rng = random.Random(seed if det_mode else None)
+            self._economy_rng = random.Random((seed + 1_000_003) if det_mode else None)
             self._set_sim_time(state)
             self._initialize_orbital_state(state)
             self._event_counter = 0
             self._last_event_uid = ""
             self._startup_merchants_launched = False
             self._startup_launch_queue.clear()
+            self._economy_drift_accumulator_days = 0.0
 
     def _initialize_orbital_state(self, state: dict[str, Any]) -> None:
         seed = int(state.get("deterministic_seed", 424242) or 424242)
@@ -313,11 +319,14 @@ class DepartureGenerator(threading.Thread):
         )
 
         runtime_snap = self._runtime.snapshot()
-        self._store.advance_station_economy(
-            elapsed_days=elapsed_days,
-            rng=self._rng,
-            magnitude=float(runtime_snap.get("economy_drift_magnitude", 1.0) or 1.0),
-        )
+        self._economy_drift_accumulator_days += elapsed_days
+        if self._economy_drift_accumulator_days >= self._economy_snapshot_refresh_interval_days:
+            self._store.advance_station_economy(
+                elapsed_days=self._economy_drift_accumulator_days,
+                rng=self._economy_rng,
+                magnitude=float(runtime_snap.get("economy_drift_magnitude", 1.0) or 1.0),
+            )
+            self._economy_drift_accumulator_days = 0.0
         self._economy_snapshot_accumulator_days, _ = self._station_economy_cache.refresh_if_needed(
             store=self._store,
             elapsed_days=elapsed_days,
@@ -555,12 +564,12 @@ class DepartureGenerator(threading.Thread):
         scenario: dict[str, Any] | None,
         tick_time: datetime,
     ) -> dict[str, Any] | None:
-        ship = self._pick_ship(scenario, tick_time)
+        ship = self._pick_ship(state, scenario, tick_time)
         if not ship:
             return None
 
         src = ship["current_station_id"]
-        dst = self._pick_destination(ship, src, scenario)
+        dst = self._pick_destination(ship, src, scenario, runtime_snap=state)
         if not dst:
             return None
 
@@ -574,6 +583,7 @@ class DepartureGenerator(threading.Thread):
             departure_time=tick_time,
             scenario=scenario,
             ship_faction=str(ship.get("faction") or ""),
+            runtime_snap=state,
         )
         if event is None:
             return None
@@ -587,6 +597,7 @@ class DepartureGenerator(threading.Thread):
         departure_time: datetime,
         scenario: dict[str, Any] | None,
         ship_faction: str | None = None,
+        runtime_snap: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
         event, self._event_counter, event_uid = create_departure_event(
             ship_id=ship_id,
@@ -595,6 +606,7 @@ class DepartureGenerator(threading.Thread):
             departure_time=departure_time,
             scenario=scenario,
             ship_faction=ship_faction,
+            runtime_snap=runtime_snap,
             store=self._store,
             station_lookup=self._station_lookup,
             rng=self._rng,
@@ -623,13 +635,12 @@ class DepartureGenerator(threading.Thread):
         if not self._startup_launch_queue:
             return True
 
-        runtime_snap = self._runtime.snapshot()
-        launches_remaining = min(self._startup_launch_batch_size, len(self._startup_launch_queue))
+        launches_remaining = min(self._current_startup_launch_batch_size(state), len(self._startup_launch_queue))
         while launches_remaining > 0:
             ship = self._startup_launch_queue.popleft()
             launches_remaining -= 1
             src = ship["current_station_id"]
-            dst = self._pick_destination(ship, src, scenario, runtime_snap=runtime_snap)
+            dst = self._pick_destination(ship, src, scenario, runtime_snap=state)
             if not dst:
                 continue
             if self._is_scoped_interrupt(scenario, ship, src, dst):
@@ -642,6 +653,7 @@ class DepartureGenerator(threading.Thread):
                 departure_time=tick_time,
                 scenario=scenario,
                 ship_faction=str(ship.get("faction") or ""),
+                runtime_snap=state,
             )
             if event is None:
                 continue
@@ -653,22 +665,16 @@ class DepartureGenerator(threading.Thread):
 
     def _persist_and_publish_event(self, event: dict[str, Any], state: dict[str, Any]) -> None:
         try:
-            row_id = self._store.insert_departure(event)
+            row_id = self._store.persist_departure_with_economy_impact(
+                event,
+                rng=self._rng,
+                magnitude=float(state.get("economy_departure_impact_magnitude", 0.012) or 0.012),
+            )
         except sqlite3.ProgrammingError:
             # Application shutdown can close the DB while the generator thread is finishing a tick.
             self._stop_event.set()
             return
         event["id"] = row_id
-        try:
-            self._store.apply_departure_economy_impact(
-                source_station_id=str(event.get("source_station_id") or ""),
-                destination_station_id=str(event.get("destination_station_id") or ""),
-                rng=self._rng,
-                magnitude=float(state.get("economy_departure_impact_magnitude", 0.012) or 0.012),
-            )
-        except sqlite3.ProgrammingError:
-            self._stop_event.set()
-            return
 
         now_monotonic = time.monotonic()
         if now_monotonic >= self._next_retention_trim_at:
@@ -697,9 +703,8 @@ class DepartureGenerator(threading.Thread):
             while self._departure_timestamps and (now - self._departure_timestamps[0]) > self._departures_window_seconds:
                 self._departure_timestamps.popleft()
 
-    def _pick_ship(self, scenario: dict[str, Any] | None, tick_time: datetime) -> dict[str, Any] | None:
+    def _pick_ship(self, runtime_snap: dict[str, Any], scenario: dict[str, Any] | None, tick_time: datetime) -> dict[str, Any] | None:
         all_available = self._store.list_available_ships()
-        runtime_snap = self._runtime.snapshot()
         merchant_idle_pause_seconds = int(runtime_snap.get("merchant_idle_pause_seconds", 120))
         candidates = [
             ship
@@ -812,11 +817,18 @@ class DepartureGenerator(threading.Thread):
         advance_orbital_body_state(self._orbital_state, interval_seconds / 86400.0)
         self._sim_time = tick_time + timedelta(seconds=interval_seconds)
 
-    def estimate_arrival(self, departure_time: datetime, source: str, destination: str) -> datetime:
+    def estimate_arrival(
+        self,
+        departure_time: datetime,
+        source: str,
+        destination: str,
+        runtime_snap: dict[str, Any] | None = None,
+    ) -> datetime:
         if self._rng is None:
             self._ensure_rng(self._runtime.snapshot())
 
-        runtime_snap = self._runtime.snapshot()
+        if runtime_snap is None:
+            runtime_snap = self._runtime.snapshot()
         src_group = self._distance_groups.get(source, 5)
         dst_group = self._distance_groups.get(destination, 5)
         base_hops = abs(src_group - dst_group)
@@ -871,6 +883,18 @@ class DepartureGenerator(threading.Thread):
         multiplier = min_multiplier + ((max_multiplier - min_multiplier) * normalized_distance)
 
         return base_hops * multiplier
+
+    def _current_startup_launch_batch_size(self, state: dict[str, Any]) -> int:
+        if state.get("deterministic_mode"):
+            return self._startup_launch_batch_size
+        last_latency = self._tick_latency_last_ms
+        if last_latency >= 1000.0:
+            return self._startup_launch_batch_size_min
+        if last_latency >= 700.0:
+            return max(self._startup_launch_batch_size_min, self._startup_launch_batch_size // 2)
+        if last_latency >= 450.0:
+            return max(self._startup_launch_batch_size_min, (self._startup_launch_batch_size * 3) // 4)
+        return self._startup_launch_batch_size
 
     def _apply_faults(self, event: dict[str, Any], state: dict[str, Any]) -> None:
         apply_faults(

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 import random
+from datetime import UTC, datetime
 from typing import Any
 
 from .storage import CatalogRepository, ControlRepository, DepartureRepository, FleetRepository, StorageContext
@@ -222,6 +224,58 @@ class SQLiteStore:
             now_iso=now_iso,
         )
 
+    def begin_departure(
+        self,
+        ship_id: str,
+        source_station_id: str,
+        destination_station_id: str,
+        departure_time: str,
+        est_arrival_time: str,
+        cargo: str | None = None,
+        now_iso: str | None = None,
+    ) -> bool:
+        now = now_iso or departure_time
+        with self._context.lock:
+            cur = self._context.conn.execute(
+                """
+                UPDATE ship_state
+                SET
+                    in_transit = 1,
+                    current_station_id = NULL,
+                    source_station_id = ?,
+                    destination_station_id = ?,
+                    departure_time = ?,
+                    est_arrival_time = ?,
+                    updated_at = ?
+                WHERE
+                    ship_id = ?
+                    AND status = 'active'
+                    AND in_transit = 0
+                    AND current_station_id = ?
+                """,
+                (
+                    source_station_id,
+                    destination_station_id,
+                    departure_time,
+                    est_arrival_time,
+                    now,
+                    ship_id,
+                    source_station_id,
+                ),
+            )
+            if int(cur.rowcount) <= 0:
+                self._context.conn.rollback()
+                return False
+
+            if cargo is not None:
+                self._context.conn.execute(
+                    "UPDATE ships SET cargo = ? WHERE id = ?",
+                    (cargo, ship_id),
+                )
+
+            self._context.conn.commit()
+            return True
+
     def complete_ship_arrivals(self, as_of_time: str) -> int:
         return self.fleet.complete_arrivals(as_of_time)
 
@@ -233,6 +287,52 @@ class SQLiteStore:
 
     def insert_departure(self, event: dict[str, Any]) -> int:
         return self.departures.insert(event)
+
+    def persist_departure_with_economy_impact(
+        self,
+        event: dict[str, Any],
+        rng: random.Random | None = None,
+        magnitude: float = 0.012,
+    ) -> int:
+        rng = rng or random.Random()
+        magnitude = max(0.001, min(0.2, float(magnitude)))
+
+        with self._context.lock:
+            cur = self._context.conn.execute(
+                """
+                INSERT INTO departures (
+                    event_uid, departure_time, ship_id, source_station_id, destination_station_id,
+                    est_arrival_time, scenario, fault_flags, malformed, payload_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event["event_uid"],
+                    event["departure_time"],
+                    event.get("ship_id"),
+                    event.get("source_station_id"),
+                    event.get("destination_station_id"),
+                    event.get("est_arrival_time"),
+                    event.get("scenario"),
+                    json.dumps(event.get("fault_flags", [])),
+                    1 if event.get("malformed") else 0,
+                    event["payload_json"],
+                    event.get("created_at") or datetime.now(UTC).isoformat(),
+                ),
+            )
+
+            source_station_id = str(event.get("source_station_id") or "")
+            destination_station_id = str(event.get("destination_station_id") or "")
+            if source_station_id and destination_station_id:
+                self.catalog._apply_economy_impact_no_commit(
+                    conn=self._context.conn,
+                    source_station_id=source_station_id,
+                    destination_station_id=destination_station_id,
+                    rng=rng,
+                    magnitude=magnitude,
+                )
+
+            self._context.conn.commit()
+            return int(cur.lastrowid)
 
     def list_departures(
         self,
